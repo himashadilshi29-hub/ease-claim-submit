@@ -1,12 +1,36 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import LandingPage from "@/components/LandingPage";
+import ClaimsWizard from "@/components/ClaimsWizard";
 
 const Index = () => {
+  const [showWizard, setShowWizard] = useState(false);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background">
+      <AnimatePresence mode="wait">
+        {!showWizard ? (
+          <motion.div
+            key="landing"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <LandingPage onSubmitClaim={() => setShowWizard(true)} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="wizard"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <ClaimsWizard onBack={() => setShowWizard(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
