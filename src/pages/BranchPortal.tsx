@@ -89,14 +89,14 @@ const BranchPortal = () => {
               <div key={i} className="flex flex-col items-center">
                 <div
                   className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 border-2",
-                    i < currentStep && "bg-white border-success text-success",
-                    i === currentStep && "gradient-primary text-white border-transparent shadow-lg",
-                    i > currentStep && "bg-white border-border text-muted-foreground"
+                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300",
+                    i < currentStep && "gradient-primary text-white shadow-md",
+                    i === currentStep && "gradient-primary text-white shadow-lg",
+                    i > currentStep && "bg-white border-2 border-border text-muted-foreground"
                   )}
                 >
                   {i < currentStep ? (
-                    <RefreshCw className="w-4 h-4" />
+                    <CheckCircle className="w-5 h-5" />
                   ) : (
                     i + 1
                   )}
