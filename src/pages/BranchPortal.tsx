@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, CheckCircle, Upload, X, Globe } from "lucide-react";
+import { CheckCircle, Upload, X, Globe, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,8 +73,8 @@ const BranchPortal = () => {
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
+          {/* Header - Centered */}
+          <div className="text-center mb-8">
             <h1 className="text-2xl md:text-3xl font-bold text-foreground">
               Customer Portal - Branch
             </h1>
@@ -83,26 +83,30 @@ const BranchPortal = () => {
             </p>
           </div>
 
-          {/* Step Indicator */}
-          <div className="flex justify-between items-center mb-8">
+          {/* Step Indicator - Centered Circles */}
+          <div className="flex justify-center items-center gap-4 md:gap-8 mb-8">
             {STEPS.map((step, i) => (
-              <div key={i} className="flex items-center">
-                <div className="flex flex-col items-center">
-                  <div
-                    className={cn(
-                      "step-circle",
-                      i < currentStep && "step-circle-completed",
-                      i === currentStep && "step-circle-active",
-                      i > currentStep && "step-circle-pending"
-                    )}
-                  >
-                    {i < currentStep ? <CheckCircle className="w-5 h-5" /> : i + 1}
-                  </div>
-                  <span className="text-xs text-muted-foreground mt-1 hidden md:block">{step}</span>
+              <div key={i} className="flex flex-col items-center">
+                <div
+                  className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 border-2",
+                    i < currentStep && "bg-white border-success text-success",
+                    i === currentStep && "gradient-primary text-white border-transparent shadow-lg",
+                    i > currentStep && "bg-white border-border text-muted-foreground"
+                  )}
+                >
+                  {i < currentStep ? (
+                    <RefreshCw className="w-4 h-4" />
+                  ) : (
+                    i + 1
+                  )}
                 </div>
-                {i < STEPS.length - 1 && (
-                  <div className={cn("w-12 md:w-24 h-0.5 mx-2", i < currentStep ? "bg-success" : "bg-border")} />
-                )}
+                <span className={cn(
+                  "text-xs mt-2 hidden md:block",
+                  i === currentStep ? "text-primary font-medium" : "text-muted-foreground"
+                )}>
+                  {step}
+                </span>
               </div>
             ))}
           </div>
@@ -120,7 +124,10 @@ const BranchPortal = () => {
                 {/* Step 0: Language Selection */}
                 {currentStep === 0 && (
                   <div className="space-y-6">
-                    <h2 className="text-xl font-bold text-foreground">Select Language</h2>
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground">Select Language</h2>
+                      <p className="text-sm text-muted-foreground mt-1">Choose your preferred language</p>
+                    </div>
                     <div className="grid md:grid-cols-3 gap-4">
                       {[
                         { code: "en", label: "English" },
@@ -149,11 +156,14 @@ const BranchPortal = () => {
                 {/* Step 1: Verify Policy */}
                 {currentStep === 1 && (
                   <div className="space-y-6">
-                    <h2 className="text-xl font-bold text-foreground">Verify Policy</h2>
                     <div>
-                      <Label>Policy Number / Mobile Number</Label>
+                      <h2 className="text-xl font-bold text-foreground">Verify Policy</h2>
+                      <p className="text-sm text-muted-foreground mt-1">Enter your NIC or Policy Number to verify</p>
+                    </div>
+                    <div>
+                      <Label>NIC or Policy Number</Label>
                       <Input
-                        placeholder="Enter policy or mobile number"
+                        placeholder="Enter NIC (e.g., 123456789V) or Policy Number"
                         value={formData.policyNumber}
                         onChange={(e) => updateFormData("policyNumber", e.target.value)}
                         className="mt-1"
@@ -162,7 +172,7 @@ const BranchPortal = () => {
                     <div className="flex gap-3">
                       <Button variant="outline" onClick={prevStep}>Back</Button>
                       <Button variant="hero" onClick={nextStep} disabled={!formData.policyNumber}>
-                        Next
+                        Continue
                       </Button>
                     </div>
                   </div>
@@ -171,7 +181,10 @@ const BranchPortal = () => {
                 {/* Step 2: Claim Details */}
                 {currentStep === 2 && (
                   <div className="space-y-6">
-                    <h2 className="text-xl font-bold text-foreground">Claim Details</h2>
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground">Claim Details</h2>
+                      <p className="text-sm text-muted-foreground mt-1">Provide your claim information</p>
+                    </div>
                     <div className="space-y-4">
                       <div>
                         <Label>Claim Type *</Label>
@@ -217,7 +230,7 @@ const BranchPortal = () => {
                         onClick={nextStep}
                         disabled={!formData.claimType || !formData.relationship}
                       >
-                        Next
+                        Continue
                       </Button>
                     </div>
                   </div>
@@ -226,7 +239,10 @@ const BranchPortal = () => {
                 {/* Step 3: Upload Documents */}
                 {currentStep === 3 && (
                   <div className="space-y-6">
-                    <h2 className="text-xl font-bold text-foreground">Upload Documents</h2>
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground">Upload Documents</h2>
+                      <p className="text-sm text-muted-foreground mt-1">Upload your claim documents for verification</p>
+                    </div>
                     <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary transition-colors">
                       <input
                         type="file"
