@@ -358,7 +358,11 @@ const AdminDashboard = () => {
                     <TableCell>{getOcrBadge(claim.ocr.confidence, claim.ocr.level)}</TableCell>
                     <TableCell>{getStatusBadge(claim.status)}</TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => navigate(`/admin/claim/${claim.id}`)}
+                      >
                         <Eye className="w-4 h-4" />
                       </Button>
                     </TableCell>
