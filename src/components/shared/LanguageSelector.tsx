@@ -6,8 +6,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useLanguage, Language } from "@/lib/i18n";
 
-const languages = [
+const languages: { code: Language; label: string }[] = [
   { code: "en", label: "English" },
   { code: "si", label: "සිංහල" },
   { code: "ta", label: "தமிழ்" },
@@ -15,17 +16,12 @@ const languages = [
 
 interface LanguageSelectorProps {
   variant?: "light" | "dark";
-  currentLanguage?: string;
-  onLanguageChange?: (code: string) => void;
 }
 
-const LanguageSelector = ({
-  variant = "light",
-  currentLanguage = "en",
-  onLanguageChange,
-}: LanguageSelectorProps) => {
+const LanguageSelector = ({ variant = "light" }: LanguageSelectorProps) => {
+  const { language, setLanguage } = useLanguage();
   const isDark = variant === "dark";
-  const current = languages.find((l) => l.code === currentLanguage) || languages[0];
+  const current = languages.find((l) => l.code === language) || languages[0];
 
   return (
     <DropdownMenu>
@@ -45,10 +41,10 @@ const LanguageSelector = ({
         {languages.map((lang) => (
           <DropdownMenuItem
             key={lang.code}
-            onClick={() => onLanguageChange?.(lang.code)}
+            onClick={() => setLanguage(lang.code)}
             className={cn(
               "cursor-pointer",
-              lang.code === currentLanguage && "bg-primary text-primary-foreground"
+              lang.code === language && "bg-primary text-primary-foreground"
             )}
           >
             {lang.label}

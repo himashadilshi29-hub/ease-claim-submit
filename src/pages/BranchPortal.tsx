@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Upload, X, Globe, RefreshCw } from "lucide-react";
+import { CheckCircle, Upload, X, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,13 +15,12 @@ import {
 import Logo from "@/components/shared/Logo";
 import LanguageSelector from "@/components/shared/LanguageSelector";
 import { cn } from "@/lib/utils";
-
-const STEPS = ["Language", "Verify", "Details", "Upload", "Complete"];
+import { useLanguage, Language } from "@/lib/i18n";
 
 const BranchPortal = () => {
   const navigate = useNavigate();
+  const { t, setLanguage } = useLanguage();
   const [currentStep, setCurrentStep] = useState(0);
-  const [language, setLanguage] = useState("");
   const [formData, setFormData] = useState({
     policyNumber: "",
     claimType: "",
@@ -30,6 +29,8 @@ const BranchPortal = () => {
   });
   const [documents, setDocuments] = useState<File[]>([]);
   const [referenceNumber, setReferenceNumber] = useState("");
+
+  const STEPS = [t.stepLanguage, t.stepVerify, t.stepDetails, t.stepUpload, t.stepComplete];
 
   const updateFormData = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -55,10 +56,14 @@ const BranchPortal = () => {
 
   const handleReset = () => {
     setCurrentStep(0);
-    setLanguage("");
     setFormData({ policyNumber: "", claimType: "", relationship: "", bankAccount: "" });
     setDocuments([]);
     setReferenceNumber("");
+  };
+
+  const handleLanguageSelect = (langCode: Language) => {
+    setLanguage(langCode);
+    nextStep();
   };
 
   return (
@@ -76,10 +81,10 @@ const BranchPortal = () => {
           {/* Header - Centered */}
           <div className="text-center mb-8">
             <h1 className="text-2xl md:text-3xl font-bold text-foreground">
-              Customer Portal - Branch
+              {t.customerPortalBranch}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Submit your claim with AI-powered verification
+              {t.submitWithAI}
             </p>
           </div>
 
@@ -125,25 +130,19 @@ const BranchPortal = () => {
                 {currentStep === 0 && (
                   <div className="space-y-6">
                     <div>
-                      <h2 className="text-xl font-bold text-foreground">Select Language</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Choose your preferred language</p>
+                      <h2 className="text-xl font-bold text-foreground">{t.selectLanguage}</h2>
+                      <p className="text-sm text-muted-foreground mt-1">{t.selectLanguageDesc}</p>
                     </div>
                     <div className="grid md:grid-cols-3 gap-4">
                       {[
-                        { code: "en", label: "English" },
-                        { code: "si", label: "සිංහල (Sinhala)" },
-                        { code: "ta", label: "தமிழ் (Tamil)" },
+                        { code: "en" as Language, label: t.langEnglish },
+                        { code: "si" as Language, label: t.langSinhala },
+                        { code: "ta" as Language, label: t.langTamil },
                       ].map((lang) => (
                         <button
                           key={lang.code}
-                          onClick={() => {
-                            setLanguage(lang.code);
-                            nextStep();
-                          }}
-                          className={cn(
-                            "p-6 rounded-xl border-2 text-center transition-all hover:border-primary hover:bg-secondary",
-                            language === lang.code ? "border-primary bg-secondary" : "border-border"
-                          )}
+                          onClick={() => handleLanguageSelect(lang.code)}
+                          className="p-6 rounded-xl border-2 border-border text-center transition-all hover:border-primary hover:bg-secondary"
                         >
                           <Globe className="w-8 h-8 text-primary mx-auto mb-2" />
                           <p className="font-semibold text-foreground">{lang.label}</p>
@@ -157,22 +156,22 @@ const BranchPortal = () => {
                 {currentStep === 1 && (
                   <div className="space-y-6">
                     <div>
-                      <h2 className="text-xl font-bold text-foreground">Verify Policy</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Enter your NIC or Policy Number to verify</p>
+                      <h2 className="text-xl font-bold text-foreground">{t.verifyPolicy}</h2>
+                      <p className="text-sm text-muted-foreground mt-1">{t.verifyPolicyDesc}</p>
                     </div>
                     <div>
-                      <Label>NIC or Policy Number</Label>
+                      <Label>{t.labelNICPolicy}</Label>
                       <Input
-                        placeholder="Enter NIC (e.g., 123456789V) or Policy Number"
+                        placeholder={t.placeholderNICPolicy}
                         value={formData.policyNumber}
                         onChange={(e) => updateFormData("policyNumber", e.target.value)}
                         className="mt-1"
                       />
                     </div>
                     <div className="flex gap-3">
-                      <Button variant="outline" onClick={prevStep}>Back</Button>
+                      <Button variant="outline" onClick={prevStep}>{t.btnBack}</Button>
                       <Button variant="hero" onClick={nextStep} disabled={!formData.policyNumber}>
-                        Continue
+                        {t.btnContinue}
                       </Button>
                     </div>
                   </div>
@@ -182,41 +181,41 @@ const BranchPortal = () => {
                 {currentStep === 2 && (
                   <div className="space-y-6">
                     <div>
-                      <h2 className="text-xl font-bold text-foreground">Claim Details</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Provide your claim information</p>
+                      <h2 className="text-xl font-bold text-foreground">{t.claimDetails}</h2>
+                      <p className="text-sm text-muted-foreground mt-1">{t.claimDetailsDesc}</p>
                     </div>
                     <div className="space-y-4">
                       <div>
-                        <Label>Claim Type *</Label>
+                        <Label>{t.labelClaimType} *</Label>
                         <Select value={formData.claimType} onValueChange={(v) => updateFormData("claimType", v)}>
                           <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select type of claim" />
+                            <SelectValue placeholder={t.placeholderClaimType} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="opd">OPD (Out-Patient)</SelectItem>
-                            <SelectItem value="spectacles">Spectacles</SelectItem>
-                            <SelectItem value="dental">Dental</SelectItem>
+                            <SelectItem value="opd">{t.claimTypeOPD}</SelectItem>
+                            <SelectItem value="spectacles">{t.claimTypeSpectacles}</SelectItem>
+                            <SelectItem value="dental">{t.claimTypeDental}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
-                        <Label>Relationship *</Label>
+                        <Label>{t.labelRelationship} *</Label>
                         <Select value={formData.relationship} onValueChange={(v) => updateFormData("relationship", v)}>
                           <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Select relationship" />
+                            <SelectValue placeholder={t.placeholderRelationship} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="self">Self</SelectItem>
-                            <SelectItem value="spouse">Spouse</SelectItem>
-                            <SelectItem value="child">Child</SelectItem>
-                            <SelectItem value="parent">Parent</SelectItem>
+                            <SelectItem value="self">{t.relationSelf}</SelectItem>
+                            <SelectItem value="spouse">{t.relationSpouse}</SelectItem>
+                            <SelectItem value="child">{t.relationChild}</SelectItem>
+                            <SelectItem value="parent">{t.relationParent}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
-                        <Label>Bank Account Number</Label>
+                        <Label>{t.labelBankAccount}</Label>
                         <Input
-                          placeholder="1234567890 (BOC)"
+                          placeholder={t.placeholderBankAccount}
                           value={formData.bankAccount}
                           onChange={(e) => updateFormData("bankAccount", e.target.value)}
                           className="mt-1"
@@ -224,13 +223,13 @@ const BranchPortal = () => {
                       </div>
                     </div>
                     <div className="flex gap-3">
-                      <Button variant="outline" onClick={prevStep}>Back</Button>
+                      <Button variant="outline" onClick={prevStep}>{t.btnBack}</Button>
                       <Button
                         variant="hero"
                         onClick={nextStep}
                         disabled={!formData.claimType || !formData.relationship}
                       >
-                        Continue
+                        {t.btnContinue}
                       </Button>
                     </div>
                   </div>
@@ -240,8 +239,8 @@ const BranchPortal = () => {
                 {currentStep === 3 && (
                   <div className="space-y-6">
                     <div>
-                      <h2 className="text-xl font-bold text-foreground">Upload Documents</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Upload your claim documents for verification</p>
+                      <h2 className="text-xl font-bold text-foreground">{t.uploadDocuments}</h2>
+                      <p className="text-sm text-muted-foreground mt-1">{t.uploadDocumentsDesc}</p>
                     </div>
                     <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary transition-colors">
                       <input
@@ -254,8 +253,8 @@ const BranchPortal = () => {
                       />
                       <label htmlFor="file-upload" className="cursor-pointer">
                         <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-foreground font-medium">Drag & drop files or Browse</p>
-                        <p className="text-sm text-muted-foreground mt-1">Supports PDF, JPG, PNG</p>
+                        <p className="text-foreground font-medium">{t.dragDropFiles}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{t.supportedFormats}</p>
                       </label>
                     </div>
 
@@ -273,9 +272,9 @@ const BranchPortal = () => {
                     )}
 
                     <div className="flex gap-3">
-                      <Button variant="outline" onClick={prevStep}>Back</Button>
+                      <Button variant="outline" onClick={prevStep}>{t.btnBack}</Button>
                       <Button variant="hero" onClick={handleSubmit}>
-                        Submit Claim
+                        {t.btnSubmitClaim2}
                       </Button>
                     </div>
                   </div>
@@ -291,16 +290,16 @@ const BranchPortal = () => {
                     >
                       <CheckCircle className="w-10 h-10 text-white" />
                     </motion.div>
-                    <h2 className="text-2xl font-bold text-foreground mb-2">Claim Submitted Successfully!</h2>
+                    <h2 className="text-2xl font-bold text-foreground mb-2">{t.claimSubmitted}</h2>
                     <div className="bg-muted rounded-xl p-4 inline-block mb-4">
-                      <p className="text-sm text-muted-foreground">Claim Reference Number:</p>
+                      <p className="text-sm text-muted-foreground">{t.claimReference}</p>
                       <p className="text-xl font-bold text-primary">{referenceNumber}</p>
                     </div>
                     <p className="text-muted-foreground mb-6">
-                      We will review your claim and notify you via SMS within 24 hours.
+                      {t.claimReviewMsg}
                     </p>
                     <Button variant="hero" onClick={handleReset} className="w-full max-w-xs">
-                      Submit Another Claim
+                      {t.btnSubmitAnother}
                     </Button>
                   </div>
                 )}

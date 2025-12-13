@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import Logo from "@/components/shared/Logo";
 import LanguageSelector from "@/components/shared/LanguageSelector";
 import Footer from "@/components/shared/Footer";
+import { useLanguage } from "@/lib/i18n";
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -31,10 +33,10 @@ const LandingPage = () => {
 
         <div className="container mx-auto px-4 py-16 text-center relative z-10">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-primary-foreground mb-6 animate-fade-in">
-            Janashakthi Smart Claims
+            {t.heroTitle}
           </h1>
           <p className="text-lg md:text-xl text-primary-foreground/90 max-w-2xl mx-auto mb-10 animate-fade-in">
-            Submit and track your claims with AI-powered document verification. Fast, secure, and simple.
+            {t.heroSub}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in">
             <Button
@@ -42,7 +44,7 @@ const LandingPage = () => {
               onClick={() => navigate("/branch")}
               className="bg-white text-primary hover:bg-white/90 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 font-bold rounded-full px-8"
             >
-              Submit New Claim
+              {t.btnSubmitClaim}
             </Button>
             <Button
               variant="heroOutline"
@@ -50,7 +52,7 @@ const LandingPage = () => {
               className="rounded-full"
               onClick={() => navigate("/digital-portal")}
             >
-              Digital Portal
+              {t.btnDigitalPortal}
             </Button>
           </div>
         </div>
@@ -60,31 +62,31 @@ const LandingPage = () => {
       <section className="py-16 bg-background">
         <div className="container mx-auto px-4">
           <h2 className="text-3xl font-bold text-center text-foreground mb-12">
-            Choose Your Portal
+            {t.choosePortal}
           </h2>
           <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             <PortalCard
               icon={<Building className="w-8 h-8" />}
-              title="Branch Portal"
-              subtitle="For branch staff and walk-in customers"
-              description="Submit claims at your nearest branch with assisted document verification"
-              buttonText="Access Portal"
+              title={t.branchPortalTitle}
+              subtitle={t.branchPortalSubtitle}
+              description={t.branchPortalDesc}
+              buttonText={t.btnAccessPortal}
               onClick={() => navigate("/branch")}
             />
             <PortalCard
               icon={<Smartphone className="w-8 h-8" />}
-              title="Digital Portal"
-              subtitle="For mobile and online submissions"
-              description="Submit and track claims anytime, anywhere through our digital platform"
-              buttonText="Login Now"
+              title={t.digitalPortalTitle}
+              subtitle={t.digitalPortalSubtitle}
+              description={t.digitalPortalDesc}
+              buttonText={t.btnLoginNow}
               onClick={() => navigate("/digital-portal")}
             />
             <PortalCard
               icon={<ShieldCheck className="w-8 h-8" />}
-              title="Admin View"
-              subtitle="For administrators and staff"
-              description="Review and manage all claims with comprehensive analytics and reporting"
-              buttonText="Admin Login"
+              title={t.adminTitle}
+              subtitle={t.adminSubtitle}
+              description={t.adminDesc}
+              buttonText={t.btnAdminLogin}
               onClick={() => navigate("/admin")}
             />
           </div>
@@ -95,10 +97,10 @@ const LandingPage = () => {
       <section className="py-12 bg-muted/50 border-t border-border">
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto text-center">
-            <StatItem value="100%" label="AI-Powered Verification" />
-            <StatItem value="24/7" label="Available Anytime" />
-            <StatItem value="3" label="Languages Supported" />
-            <StatItem value="Fast" label="Quick Processing" />
+            <StatItem value="100%" label={t.statAI} />
+            <StatItem value="24/7" label={t.stat247} />
+            <StatItem value="3" label={t.statLang} />
+            <StatItem value="Fast" label={t.statFast} />
           </div>
         </div>
       </section>
