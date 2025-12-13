@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import Logo from "./Logo";
 import LanguageSelector from "./LanguageSelector";
 import { LogOut } from "lucide-react";
+import { useLanguage } from "@/lib/i18n";
 
 interface NavbarProps {
   variant?: "light" | "dark" | "gradient";
@@ -12,6 +13,7 @@ interface NavbarProps {
 
 const Navbar = ({ variant = "gradient", showLogout = false, onLogout }: NavbarProps) => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const bgClass =
     variant === "gradient"
@@ -36,7 +38,7 @@ const Navbar = ({ variant = "gradient", showLogout = false, onLogout }: NavbarPr
               className="border-white/30 text-white hover:bg-white/10"
             >
               <LogOut className="w-4 h-4 mr-2" />
-              Logout
+              {t.logout}
             </Button>
           )}
         </div>

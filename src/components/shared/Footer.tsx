@@ -1,7 +1,10 @@
 import { Phone, Mail, MapPin } from "lucide-react";
 import Logo from "./Logo";
+import { useLanguage } from "@/lib/i18n";
 
 const Footer = () => {
+  const { t } = useLanguage();
+
   return (
     <footer className="bg-[#1a1a1a] text-white py-12">
       <div className="container mx-auto px-4">
@@ -10,27 +13,27 @@ const Footer = () => {
           <div>
             <Logo variant="dark" />
             <p className="text-gray-400 mt-4 text-sm">
-              Making insurance claims simple, fast, and transparent with AI-powered verification.
+              {t.footerDesc}
             </p>
           </div>
 
           {/* Quick Links */}
           <div>
-            <h3 className="font-semibold text-lg mb-4">Quick Links</h3>
+            <h3 className="font-semibold text-lg mb-4">{t.quickLinks}</h3>
             <ul className="space-y-2 text-gray-400 text-sm">
               <li>
                 <a href="#" className="hover:text-primary transition-colors">
-                  Submit OPD Claim
+                  {t.linkSubmitOPD}
                 </a>
               </li>
               <li>
                 <a href="#" className="hover:text-primary transition-colors">
-                  Track Claim Status
+                  {t.linkTrackStatus}
                 </a>
               </li>
               <li>
                 <a href="#" className="hover:text-primary transition-colors">
-                  Digital Portal
+                  {t.linkDigitalPortal}
                 </a>
               </li>
             </ul>
@@ -38,7 +41,7 @@ const Footer = () => {
 
           {/* Contact Us */}
           <div>
-            <h3 className="font-semibold text-lg mb-4">Contact Us</h3>
+            <h3 className="font-semibold text-lg mb-4">{t.contactUs}</h3>
             <ul className="space-y-3 text-gray-400 text-sm">
               <li className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-primary" />
@@ -57,7 +60,7 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-500 text-sm">
-          © 2025 Janashakthi Insurance PLC. All rights reserved.
+          {t.copyright}
         </div>
       </div>
     </footer>
