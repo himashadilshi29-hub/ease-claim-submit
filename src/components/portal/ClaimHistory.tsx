@@ -1,7 +1,10 @@
+import { useNavigate } from "react-router-dom";
 import { CheckCircle, Clock, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ClaimHistory = () => {
+  const navigate = useNavigate();
+  
   const claims = [
     {
       id: "CR123456",
@@ -89,7 +92,12 @@ const ClaimHistory = () => {
               </div>
               <div className="text-right">
                 <p className="font-semibold text-foreground">{claim.amount}</p>
-                <button className="text-sm text-primary hover:underline mt-1">View Details</button>
+                <button 
+                  className="text-sm text-primary hover:underline mt-1"
+                  onClick={() => navigate(`/digital-portal/claim/${claim.id}`)}
+                >
+                  View Details
+                </button>
               </div>
             </div>
           ))}

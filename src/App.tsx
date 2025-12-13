@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
 import DigitalPortal from "./pages/DigitalPortal";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminClaimReview from "./pages/AdminClaimReview";
+import ClaimDetails from "./pages/ClaimDetails";
 import BranchPortal from "./pages/BranchPortal";
 import NotFound from "./pages/NotFound";
 
@@ -20,7 +22,9 @@ const App = () => (
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/digital-portal" element={<DigitalPortal />} />
+          <Route path="/digital-portal/claim/:claimId" element={<ClaimDetails />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/claim/:claimId" element={<AdminClaimReview />} />
           <Route path="/branch" element={<BranchPortal />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
