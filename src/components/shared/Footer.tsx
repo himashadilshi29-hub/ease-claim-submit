@@ -45,15 +45,26 @@ const Footer = () => {
             <ul className="space-y-3 text-gray-400 text-sm">
               <li className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-primary" />
-                <span>+94 11 2 303 303</span>
+                <a href="tel:+94112303303" className="hover:text-primary transition-colors">
+                  +94 11 2 303 303
+                </a>
               </li>
               <li className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-primary" />
-                <span>claims@janashakthi.lk</span>
+                <a href="mailto:claims@janashakthi.lk" className="hover:text-primary transition-colors">
+                  claims@janashakthi.lk
+                </a>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin className="w-4 h-4 text-primary mt-0.5" />
-                <span>Janashakthi Centre, Colombo 02</span>
+                <a 
+                  href="https://maps.google.com/?q=Janashakthi+Centre,+Colombo+02" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="hover:text-primary transition-colors"
+                >
+                  Janashakthi Centre, Colombo 02
+                </a>
               </li>
             </ul>
           </div>
