@@ -19,11 +19,10 @@ const ClaimDetails = () => {
     relationship: "Self",
     claimedAmount: "LKR 12,500",
     approvedAmount: "-",
-    hospital: "Nawaloka Hospital",
-    diagnosis: "Consultation & Lab Tests",
-    admissionDate: "2024-09-20",
-    dischargeDate: "2024-09-20",
-    lengthOfStay: "Same Day",
+    medicalProvider: "Nawaloka Hospital",
+    reasonForVisit: "Consultation & Lab Tests",
+    visitDate: "2024-09-20",
+    attendingDoctor: "Dr. Samantha Fernando",
     bankAccount: "1234567890 (BOC)",
     mobileNumber: "+94 77 123 4567",
   };
@@ -146,43 +145,36 @@ const ClaimDetails = () => {
               </div>
             </div>
 
-            {/* Treatment Details */}
+            {/* Medical Details */}
             <div className="glass-card p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Treatment Details</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-4">Medical Details</h2>
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="flex items-start gap-3">
                   <Building className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Hospital</p>
-                    <p className="font-medium text-primary">{claimData.hospital}</p>
+                    <p className="text-xs text-muted-foreground">Medical Provider</p>
+                    <p className="font-medium text-primary">{claimData.medicalProvider}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Diagnosis</p>
-                    <p className="font-medium text-primary">{claimData.diagnosis}</p>
+                    <p className="text-xs text-muted-foreground">Reason for Visit</p>
+                    <p className="font-medium text-primary">{claimData.reasonForVisit}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Calendar className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Admission Date</p>
-                    <p className="font-medium text-foreground">{claimData.admissionDate}</p>
+                    <p className="text-xs text-muted-foreground">Visit Date</p>
+                    <p className="font-medium text-foreground">{claimData.visitDate}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <Calendar className="w-4 h-4 text-muted-foreground mt-0.5" />
+                  <User className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Discharge Date</p>
-                    <p className="font-medium text-foreground">{claimData.dischargeDate}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Clock className="w-4 h-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Length of Stay</p>
-                    <p className="font-medium text-foreground">{claimData.lengthOfStay}</p>
+                    <p className="text-xs text-muted-foreground">Attending Doctor</p>
+                    <p className="font-medium text-foreground">{claimData.attendingDoctor}</p>
                   </div>
                 </div>
               </div>
