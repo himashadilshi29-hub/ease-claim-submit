@@ -29,6 +29,13 @@ export const translations = {
     adminSubtitle: "For administrators and staff",
     adminDesc: "Review and manage all claims with comprehensive analytics and reporting",
     btnAdminLogin: "Admin Login",
+    adminLogin: "Admin Login",
+    adminLoginSubtitle: "Secure access for administrators only",
+    username: "Username",
+    enterUsername: "Enter admin username",
+    password: "Password",
+    enterPassword: "Enter password",
+    login: "Login",
 
     // Stats
     statAI: "AI-Powered Verification",
@@ -127,6 +134,13 @@ export const translations = {
     adminSubtitle: "පරිපාලකයින් සහ කාර්ය මණ්ඩලය සඳහා",
     adminDesc: "සවිස්තරාත්මක විශ්ලේෂණ සහ වාර්තා සමඟ සියලුම හිමිකම් සමාලෝචනය කර කළමනාකරණය කරන්න",
     btnAdminLogin: "පරිපාලක පිවිසුම",
+    adminLogin: "පරිපාලක පිවිසුම",
+    adminLoginSubtitle: "පරිපාලකයින්ට පමණක් ආරක්ෂිත ප්‍රවේශය",
+    username: "පරිශීලක නාමය",
+    enterUsername: "පරිපාලක පරිශීලක නාමය ඇතුළත් කරන්න",
+    password: "මුරපදය",
+    enterPassword: "මුරපදය ඇතුළත් කරන්න",
+    login: "පිවිසෙන්න",
 
     // Stats
     statAI: "AI බලයෙන් සත්‍යාපනය",
@@ -225,6 +239,13 @@ export const translations = {
     adminSubtitle: "நிர்வாகிகள் மற்றும் ஊழியர்களுக்கு",
     adminDesc: "விரிவான பகுப்பாய்வு மற்றும் அறிக்கையிடலுடன் அனைத்து உரிமைகோரல்களையும் மதிப்பாய்வு செய்து நிர்வகிக்கவும்",
     btnAdminLogin: "நிர்வாகி உள்நுழைவு",
+    adminLogin: "நிர்வாகி உள்நுழைவு",
+    adminLoginSubtitle: "நிர்வாகிகளுக்கு மட்டுமே பாதுகாப்பான அணுகல்",
+    username: "பயனர்பெயர்",
+    enterUsername: "நிர்வாகி பயனர்பெயரை உள்ளிடவும்",
+    password: "கடவுச்சொல்",
+    enterPassword: "கடவுச்சொல்லை உள்ளிடவும்",
+    login: "உள்நுழைக",
 
     // Stats
     statAI: "AI ஆல் இயங்கும் சரிபார்ப்பு",

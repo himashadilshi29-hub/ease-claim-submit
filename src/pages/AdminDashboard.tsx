@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, Search, Download, Filter } from "lucide-react";
+import { Eye, Search, Download, Filter, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -20,10 +21,82 @@ import {
 } from "@/components/ui/table";
 import Navbar from "@/components/shared/Navbar";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/lib/i18n";
+import { motion } from "framer-motion";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const { t } = useLanguage();
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (username && password) {
+      setIsLoggedIn(true);
+    }
+  };
+
+  // Login Screen
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar variant="gradient" />
+        
+        <main className="container mx-auto px-4 py-16 flex items-center justify-center min-h-[calc(100vh-80px)]">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full max-w-md"
+          >
+            <div className="glass-card p-8 text-center">
+              {/* Orange Circle Icon */}
+              <div className="w-16 h-16 rounded-full gradient-primary mx-auto mb-6 flex items-center justify-center">
+                <User className="w-8 h-8 text-white" />
+              </div>
+              
+              <h1 className="text-2xl font-bold text-foreground mb-2">
+                {t.adminLogin}
+              </h1>
+              <p className="text-muted-foreground mb-6">
+                {t.adminLoginSubtitle}
+              </p>
+              
+              <form onSubmit={handleLogin} className="space-y-4 text-left">
+                <div className="space-y-2">
+                  <Label htmlFor="username">{t.username}</Label>
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder={t.enterUsername}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="password">{t.password}</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder={t.enterPassword}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+                
+                <Button type="submit" className="w-full" variant="hero">
+                  {t.login}
+                </Button>
+              </form>
+            </div>
+          </motion.div>
+        </main>
+      </div>
+    );
+  }
 
   const stats = [
     { label: "Total Claims", value: "245", subtitle: "+12% from last month", color: "text-primary" },
