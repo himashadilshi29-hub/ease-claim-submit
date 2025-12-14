@@ -9,7 +9,7 @@ const ClaimHistory = () => {
     {
       id: "CR123456",
       status: "approved",
-      type: "Hospitalization",
+      type: "OPD",
       date: "2024-10-15",
       amount: "LKR 45,000",
     },
@@ -23,7 +23,7 @@ const ClaimHistory = () => {
     {
       id: "CR123454",
       status: "rejected",
-      type: "Hospitalization",
+      type: "OPD",
       date: "2024-08-10",
       amount: "LKR 25,000",
       reason: "Missing documents",
