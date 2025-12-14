@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, FileText, CheckCircle, Eye, Download, Clock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, User, FileText, CheckCircle, Eye, Download, Clock, AlertTriangle, Building, Calendar, XCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import Navbar from "@/components/shared/Navbar";
 import { cn } from "@/lib/utils";
 
@@ -12,18 +14,162 @@ const AdminClaimReview = () => {
   const { claimId } = useParams();
   const [assessorNotes, setAssessorNotes] = useState("");
 
-  // Mock claim data
+  // Mock claim data - OPD focused
   const claimData = {
     id: claimId || "CR123455",
     status: "pending",
     patientName: "John Perera",
+    memberId: "123456789V",
     policyNumber: "POL-2025-5678",
     claimAmount: "LKR 125,000",
     submittedDate: "2025-01-15 10:30 AM",
-    hospital: "National Hospital",
+    medicalProvider: "National Hospital",
     diagnosis: "Appendectomy",
-    lengthOfStay: "3 days",
+    treatmentDuration: "3 days",
   };
+
+  const documentAnalysis = [
+    { 
+      name: "Claim Form", 
+      status: "verified", 
+      accuracy: 98,
+      checks: [
+        { text: "Document type classified correctly", passed: true },
+        { text: "Key fields extracted successfully", passed: true },
+        { text: "No duplicate detected", passed: true },
+      ]
+    },
+    { 
+      name: "Discharge Summary", 
+      status: "verified", 
+      accuracy: 97,
+      checks: [
+        { text: "Document type classified correctly", passed: true },
+        { text: "Key fields extracted successfully", passed: true },
+        { text: "No duplicate detected", passed: true },
+      ]
+    },
+    { 
+      name: "Hospital Bill", 
+      status: "verified", 
+      accuracy: 99,
+      checks: [
+        { text: "Document type classified correctly", passed: true },
+        { text: "Key fields extracted successfully", passed: true },
+        { text: "No duplicate detected", passed: true },
+      ]
+    },
+    { 
+      name: "Prescription", 
+      status: "verified", 
+      accuracy: 96,
+      checks: [
+        { text: "Document type classified correctly", passed: true },
+        { text: "Key fields extracted successfully", passed: true },
+        { text: "No duplicate detected", passed: true },
+      ]
+    },
+    { 
+      name: "Lab Reports", 
+      status: "verified", 
+      accuracy: 95,
+      checks: [
+        { text: "Document type classified correctly", passed: true },
+        { text: "Key fields extracted successfully", passed: true },
+        { text: "No duplicate detected", passed: true },
+      ]
+    },
+  ];
+
+  const policyData = {
+    policyNumber: "POL-2025-5678",
+    policyStatus: "Active",
+    claimType: "OPD",
+    coverageType: "Family Health Plan",
+    annualLimit: "LKR 500,000",
+    previousClaimsTotal: "LKR 45,000",
+    remainingCoverage: "LKR 455,000",
+    currentClaimAmount: "LKR 125,000",
+    maxPayable: "LKR 125,000",
+    memberVerification: [
+      { text: "Member is covered under the policy", passed: true },
+      { text: "Relationship verified: Self", passed: true },
+      { text: "Policy is active and valid", passed: true },
+      { text: "Procedure is covered", passed: true },
+    ],
+    coveredItems: ["Appendectomy", "Room Charges", "Surgery Fee", "Anesthesia", "Lab Tests", "Medication"],
+  };
+
+  const fraudAnalysis = {
+    riskLevel: "Low Risk",
+    anomalyScore: 0.92,
+    fraudRiskScore: 0.8,
+    historicalComparison: [
+      { text: "Claim amount within normal range for procedure", passed: true },
+      { text: "Treatment duration is appropriate (3 days)", passed: true },
+      { text: "No duplicate claims detected", passed: true },
+      { text: "Normal claim frequency for this member", passed: true },
+    ],
+    riskIndicators: [
+      { label: "Claim Amount Deviation", status: "Within $", color: "green" },
+      { label: "Hospital Pattern", status: "Normal", color: "green" },
+      { label: "Doctor Pattern", status: "Normal", color: "green" },
+      { label: "Member History", status: "Clean", color: "green" },
+    ],
+    duplicateCheck: [
+      { text: "Hash based matching: No duplicates found", passed: true },
+      { text: "Content based matching: Pass", passed: true },
+      { text: "No previous claims for same procedure", passed: true },
+    ],
+    recommendation: "This claim shows no signs of fraud. All validations passed successfully. Recommended for auto approval based on high confidence score (92%).",
+  };
+
+  const matchingData = [
+    {
+      title: "Prescription vs Diagnosis",
+      percentage: 95,
+      status: "Valid",
+      description: "Prescribed medicines match diagnosed condition appropriately",
+      checks: [
+        { text: "Paracetamol appropriate for post surgery pain management", passed: true },
+        { text: "Antibiotics match surgical procedure requirements", passed: true },
+        { text: "All medicines are relevant to appendectomy recovery", passed: true },
+      ],
+    },
+    {
+      title: "Prescription vs Bill",
+      percentage: 93,
+      status: "Valid",
+      description: "Billed items match prescribed medicines and quantities",
+      checks: [
+        { text: "All billed medicines are in prescription", passed: true },
+        { text: "Quantities match prescribed dosages", passed: true },
+        { text: "No non-covered or cosmetic drugs detected", passed: true },
+      ],
+    },
+    {
+      title: "Diagnosis vs Treatments",
+      percentage: 90,
+      status: "Valid",
+      description: "Treatment procedures align with diagnosis",
+      checks: [
+        { text: "Surgery type matches diagnosis (Appendectomy)", passed: true },
+        { text: "Lab reports support diagnosis", passed: true },
+        { text: "Hospital stay duration is appropriate", passed: true },
+      ],
+    },
+    {
+      title: "Billing vs Policy Limits",
+      percentage: 94,
+      status: "Valid",
+      description: "Claim amount within policy coverage limits",
+      checks: [
+        { text: "Total claim amount within annual limit", passed: true },
+        { text: "Room charges within policy allowance", passed: true },
+        { text: "Surgery fees within coverage limits", passed: true },
+      ],
+    },
+  ];
 
   const aiAnalysis = {
     overallScore: 92,
@@ -40,15 +186,14 @@ const AdminClaimReview = () => {
   };
 
   const documents = [
-    { name: "Claim Form.pdf", type: "Claim Form", size: "245 KB" },
-    { name: "Discharge Summary.pdf", type: "Discharge", size: "189 KB" },
-    { name: "Hospital Bill.pdf", type: "Bill", size: "312 KB" },
-    { name: "Prescription.pdf", type: "Prescription", size: "156 KB" },
-    { name: "Lab Reports.pdf", type: "Reports", size: "423 KB" },
+    { name: "Claim Form.pdf", type: "claim form", size: "245 KB" },
+    { name: "Discharge Summary.pdf", type: "discharge", size: "189 KB" },
+    { name: "Hospital Bill.pdf", type: "bill", size: "312 KB" },
+    { name: "Prescription.pdf", type: "prescription", size: "156 KB" },
+    { name: "Lab Reports.pdf", type: "reports", size: "423 KB" },
   ];
 
   const handleDownload = (fileName: string) => {
-    // Create a mock file download
     const content = `This is a mock PDF content for ${fileName}`;
     const blob = new Blob([content], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
@@ -79,6 +224,10 @@ const AdminClaimReview = () => {
     );
   };
 
+  const getDocStatusColor = (status: string) => {
+    return status === "verified" ? "bg-green-500" : "bg-red-500";
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar variant="gradient" showLogout onLogout={() => navigate("/")} />
@@ -102,21 +251,29 @@ const AdminClaimReview = () => {
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
             {/* Claim Information */}
-            <div className="glass-card p-6">
+            <div className="glass-card p-6 border-l-4 border-l-primary">
               <h2 className="text-lg font-semibold text-foreground mb-4">Claim Information</h2>
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-3 gap-4">
                 <div className="flex items-start gap-3">
                   <User className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-xs text-muted-foreground">Patient Name</p>
-                    <p className="font-medium text-foreground">{claimData.patientName}</p>
+                    <p className="font-medium text-primary">{claimData.patientName}</p>
+                    <p className="text-xs text-muted-foreground">{claimData.memberId}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-xs text-muted-foreground">Policy Number</p>
-                    <p className="font-medium text-foreground">{claimData.policyNumber}</p>
+                    <p className="font-medium text-primary">{claimData.policyNumber}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Calendar className="w-4 h-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Submitted</p>
+                    <p className="font-medium text-foreground">{claimData.submittedDate}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -127,31 +284,22 @@ const AdminClaimReview = () => {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <Clock className="w-4 h-4 text-muted-foreground mt-0.5" />
+                  <Building className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Submitted</p>
-                    <p className="font-medium text-foreground">{claimData.submittedDate}</p>
+                    <p className="text-xs text-muted-foreground">Medical Provider</p>
+                    <p className="font-medium text-primary">{claimData.medicalProvider}</p>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Hospital</p>
-                    <p className="font-medium text-primary">{claimData.hospital}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Diagnosis</p>
-                    <p className="font-medium text-primary">{claimData.diagnosis}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Clock className="w-4 h-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Length of Stay</p>
-                    <p className="font-medium text-foreground">{claimData.lengthOfStay}</p>
+                <div className="col-span-1">
+                  <div className="flex gap-6">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Diagnosis</p>
+                      <p className="font-medium text-foreground">{claimData.diagnosis}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Treatment Duration</p>
+                      <p className="font-medium text-foreground">{claimData.treatmentDuration}</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -219,20 +367,196 @@ const AdminClaimReview = () => {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="documents">
-                  <p className="text-muted-foreground">Document verification details...</p>
+                <TabsContent value="documents" className="space-y-4">
+                  {documentAnalysis.map((doc, i) => (
+                    <div key={i} className="border-l-4 border-l-amber-400 rounded-lg bg-muted/20 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-amber-600" />
+                          <span className="font-semibold text-amber-600">{doc.name}</span>
+                        </div>
+                        <Badge className={cn("text-white", getDocStatusColor(doc.status))}>
+                          {doc.status === "verified" ? "Verified" : "Failed"}
+                        </Badge>
+                      </div>
+                      <div className="mb-3">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-muted-foreground">OCR Accuracy</span>
+                          <span className="font-medium">{doc.accuracy}%</span>
+                        </div>
+                        <Progress value={doc.accuracy} className="h-2" />
+                      </div>
+                      <div className="space-y-1">
+                        {doc.checks.map((check, j) => (
+                          <div key={j} className="flex items-center gap-2 text-xs">
+                            <CheckCircle2 className="w-3 h-3 text-green-600" />
+                            <span className="text-muted-foreground">{check.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </TabsContent>
 
-                <TabsContent value="policy">
-                  <p className="text-muted-foreground">Policy matching details...</p>
+                <TabsContent value="policy" className="space-y-6">
+                  <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <h3 className="font-semibold text-foreground">Policy Verification Status</h3>
+                    </div>
+                    
+                    <div className="grid md:grid-cols-2 gap-4 mb-6">
+                      <div>
+                        <p className="text-xs text-amber-600">Policy Number</p>
+                        <p className="font-medium text-amber-600">{policyData.policyNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Policy Status</p>
+                        <Badge className="bg-green-500 text-white">{policyData.policyStatus}</Badge>
+                      </div>
+                      <div>
+                        <p className="text-xs text-amber-600">Claim Type</p>
+                        <p className="font-medium text-amber-600">{policyData.claimType}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Coverage Type</p>
+                        <p className="font-medium text-primary">{policyData.coverageType}</p>
+                      </div>
+                    </div>
+
+                    <h4 className="font-semibold text-foreground mb-3">Coverage Details</h4>
+                    <div className="space-y-2 mb-6">
+                      <div className="flex justify-between">
+                        <span className="text-xs text-amber-600">Annual Limit</span>
+                        <span className="font-medium">{policyData.annualLimit}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-amber-600">Previous Claims Total</span>
+                        <span className="font-medium">{policyData.previousClaimsTotal}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-amber-600">Remaining Coverage</span>
+                        <span className="font-medium text-green-600">{policyData.remainingCoverage}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-xs text-amber-600">Current Claim Amount</span>
+                        <span className="font-medium">{policyData.currentClaimAmount}</span>
+                      </div>
+                      <div className="flex justify-between border-t pt-2">
+                        <span className="text-sm font-semibold">Max Payable</span>
+                        <span className="font-bold text-primary">{policyData.maxPayable}</span>
+                      </div>
+                    </div>
+
+                    <h4 className="font-semibold text-foreground mb-3">Member Verification</h4>
+                    <div className="space-y-2 mb-6">
+                      {policyData.memberVerification.map((item, i) => (
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-green-600" />
+                          <span className="text-muted-foreground">{item.text}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <h4 className="font-semibold text-foreground mb-3">Covered Items</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {policyData.coveredItems.map((item, i) => (
+                        <Badge key={i} variant="outline" className="border-amber-400 text-amber-600">
+                          {item}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 </TabsContent>
 
-                <TabsContent value="fraud">
-                  <p className="text-muted-foreground">Fraud detection analysis...</p>
+                <TabsContent value="fraud" className="space-y-6">
+                  <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                        <h3 className="font-semibold text-foreground">Fraud Analysis Report</h3>
+                      </div>
+                      <Badge className="bg-green-500 text-white">{fraudAnalysis.riskLevel}</Badge>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4 mb-6">
+                      <div className="bg-green-50 rounded-lg p-4">
+                        <p className="text-xs text-amber-600">Anomaly Score</p>
+                        <p className="text-3xl font-bold text-green-600">{fraudAnalysis.anomalyScore}</p>
+                        <p className="text-xs text-muted-foreground">High confidence</p>
+                      </div>
+                      <div className="bg-green-50 rounded-lg p-4">
+                        <p className="text-xs text-amber-600">Fraud Risk Score</p>
+                        <p className="text-3xl font-bold text-green-600">{fraudAnalysis.fraudRiskScore}</p>
+                        <p className="text-xs text-muted-foreground">Very low risk</p>
+                      </div>
+                    </div>
+
+                    <h4 className="font-semibold text-amber-600 mb-3">Historical Comparison</h4>
+                    <div className="space-y-2 mb-6">
+                      {fraudAnalysis.historicalComparison.map((item, i) => (
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-green-600" />
+                          <span className="text-muted-foreground">{item.text}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <h4 className="font-semibold text-foreground mb-3">Risk Indicators</h4>
+                    <div className="grid md:grid-cols-2 gap-3 mb-6">
+                      {fraudAnalysis.riskIndicators.map((indicator, i) => (
+                        <div key={i} className="flex items-center justify-between">
+                          <span className="text-xs text-amber-600">{indicator.label}</span>
+                          <Badge className={cn("text-white", indicator.color === "green" ? "bg-green-500" : "bg-red-500")}>
+                            {indicator.status}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+
+                    <h4 className="font-semibold text-foreground mb-3">Duplicate Check</h4>
+                    <div className="space-y-2 mb-6">
+                      {fraudAnalysis.duplicateCheck.map((item, i) => (
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-green-600" />
+                          <span className="text-muted-foreground">{item.text}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="bg-green-50 border-l-4 border-l-green-500 rounded-lg p-4">
+                      <h4 className="font-semibold text-green-700 mb-2">AI Recommendation</h4>
+                      <p className="text-sm text-green-700">{fraudAnalysis.recommendation}</p>
+                    </div>
+                  </div>
                 </TabsContent>
 
-                <TabsContent value="matching">
-                  <p className="text-muted-foreground">Data matching results...</p>
+                <TabsContent value="matching" className="space-y-4">
+                  <h3 className="font-semibold text-foreground mb-4">Document Cross-Validation Report</h3>
+                  {matchingData.map((match, i) => (
+                    <div key={i} className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-amber-600">{match.title}</span>
+                          <Badge variant="outline" className="text-xs border-green-500 text-green-600">{Math.round(match.percentage * 0.9 + 10)}%</Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-foreground">{match.percentage}%</span>
+                          <Badge className="bg-green-500 text-white">{match.status}</Badge>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">{match.description}</p>
+                      <Progress value={match.percentage} className="h-2 mb-3" />
+                      <div className="space-y-1">
+                        {match.checks.map((check, j) => (
+                          <div key={j} className="flex items-center gap-2 text-xs">
+                            <CheckCircle2 className="w-3 h-3 text-green-600" />
+                            <span className="text-muted-foreground">{check.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </TabsContent>
               </Tabs>
             </div>
@@ -261,9 +585,10 @@ const AdminClaimReview = () => {
                   Approve Claim
                 </Button>
                 <Button variant="destructive" className="w-full">
+                  <AlertTriangle className="w-4 h-4 mr-2" />
                   Reject Claim
                 </Button>
-                <Button variant="outline" className="w-full">
+                <Button variant="outline" className="w-full border-amber-400 text-amber-600 hover:bg-amber-50">
                   <Clock className="w-4 h-4 mr-2" />
                   Request More Info
                 </Button>
@@ -284,7 +609,7 @@ const AdminClaimReview = () => {
                         <FileText className="w-4 h-4 text-red-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-foreground">{doc.name}</p>
+                        <p className="text-sm font-medium text-primary">{doc.name}</p>
                         <p className="text-xs text-muted-foreground">{doc.type}</p>
                       </div>
                     </div>
