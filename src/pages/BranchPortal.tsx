@@ -459,8 +459,6 @@ const BranchPortal = () => {
                             Lab reports and channelling bills are optional.
                           </p>
                         </div>
-                          </Select>
-                        </div>
                       )}
                       
                       <div>
