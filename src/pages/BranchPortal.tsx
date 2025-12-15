@@ -107,46 +107,73 @@ const BranchPortal = () => {
   // Verify policy when NIC/Policy number is entered
   const verifyPolicy = async () => {
     if (!formData.nicOrPolicy) return;
-    
+
+    if (authLoading) return;
+    if (!user?.id) {
+      toast.error("Please sign in as branch staff to verify policies");
+      navigate("/auth");
+      return;
+    }
+
+    const { data: roleRow, error: roleError } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (roleError || !roleRow?.role || (roleRow.role !== "branch" && roleRow.role !== "admin")) {
+      toast.error("Access denied. Please sign in with a branch account");
+      navigate("/auth");
+      return;
+    }
+
     // Validate input before querying
     const validationResult = nicOrPolicySchema.safeParse(formData.nicOrPolicy);
     if (!validationResult.success) {
       toast.error(validationResult.error.errors[0].message);
       return;
     }
-    
+
     setIsLoading(true);
     try {
-      // Use separate queries instead of string interpolation
-      const sanitizedInput = formData.nicOrPolicy.trim();
-      
-      const { data: byPolicy } = await supabase
+      const raw = formData.nicOrPolicy.trim();
+      const input = raw.replace(/\s+/g, "");
+      const policyInput = input.toUpperCase();
+
+      const { data: byPolicy, error: byPolicyError } = await supabase
         .from("policies")
         .select("*")
-        .eq("policy_number", sanitizedInput)
+        .eq("policy_number", policyInput)
         .eq("is_active", true);
-      
-      const { data: byNic } = await supabase
+
+      const { data: byNic, error: byNicError } = await supabase
         .from("policies")
         .select("*")
-        .eq("holder_nic", sanitizedInput)
+        .eq("holder_nic", input)
         .eq("is_active", true);
-      
-      const data = [...(byPolicy || []), ...(byNic || [])];
-      
-      if (data && data.length > 0) {
-        setPolicies(data);
-        setSelectedPolicy(data[0]);
-        setFormData(prev => ({ ...prev, policyId: data[0].id }));
+
+      if (byPolicyError || byNicError) {
+        toast.error("Policy lookup failed. Please ensure you are signed in as branch staff");
+        return;
+      }
+
+      const combined = [...(byPolicy || []), ...(byNic || [])];
+      const unique = Array.from(new Map(combined.map((p: any) => [p.id, p])).values());
+
+      if (unique.length > 0) {
+        setPolicies(unique);
+        setSelectedPolicy(unique[0]);
+        setFormData((prev) => ({ ...prev, policyId: unique[0].id }));
         toast.success("Policy verified successfully!");
         nextStep();
       } else {
         toast.error("No active policy found with this NIC/Policy number");
       }
-    } catch (error) {
+    } catch {
       toast.error("Unable to verify policy. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   // Fetch members when policy is selected
