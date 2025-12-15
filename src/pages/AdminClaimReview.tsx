@@ -669,30 +669,65 @@ const AdminClaimReview = () => {
             <div className="glass-card p-6">
               <div className="mb-4">
                 <h2 className="text-lg font-semibold text-foreground">Submitted Documents</h2>
-                <p className="text-xs text-muted-foreground">{documents.length} documents uploaded</p>
+                <p className="text-xs text-muted-foreground">
+                  {documents.length} {documents.length === 1 ? 'document' : 'documents'} {documents.length > 0 ? 'found' : 'uploaded'}
+                </p>
               </div>
               <div className="space-y-3">
-                {documents.map((doc, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-red-100 flex items-center justify-center">
-                        <FileText className="w-4 h-4 text-red-600" />
+                {documents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No documents uploaded</p>
+                ) : (
+                  documents.map((doc, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+                          <FileText className="w-5 h-5 text-red-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-primary">{doc.file_name}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{doc.file_type?.replace('/', ' / ') || 'Document'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-primary">{doc.file_name}</p>
-                        <p className="text-xs text-muted-foreground">{doc.file_type}</p>
+                      <div className="flex items-center gap-1">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-9 w-9 hover:bg-muted cursor-pointer"
+                          onClick={async () => {
+                            const { data } = await supabase.storage
+                              .from('claim-documents')
+                              .createSignedUrl(doc.file_path, 3600);
+                            if (data?.signedUrl) {
+                              window.open(data.signedUrl, '_blank');
+                            }
+                          }}
+                        >
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-9 w-9 hover:bg-muted cursor-pointer"
+                          onClick={async () => {
+                            const { data } = await supabase.storage
+                              .from('claim-documents')
+                              .createSignedUrl(doc.file_path, 3600);
+                            if (data?.signedUrl) {
+                              const link = document.createElement('a');
+                              link.href = data.signedUrl;
+                              link.download = doc.file_name;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }
+                          }}
+                        >
+                          <Download className="w-4 h-4 text-muted-foreground" />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {doc.ocr_confidence && (
-                        <Badge variant="outline" className="text-xs">{doc.ocr_confidence}%</Badge>
-                      )}
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
