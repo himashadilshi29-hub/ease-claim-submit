@@ -8,11 +8,50 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import Navbar from "@/components/shared/Navbar";
 import { cn } from "@/lib/utils";
+import { translations, type Language } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
 
 const AdminClaimReview = () => {
   const navigate = useNavigate();
   const { claimId } = useParams();
   const [assessorNotes, setAssessorNotes] = useState("");
+  const [language] = useState<Language>(() => {
+    const stored = localStorage.getItem("selectedLanguage");
+    return (stored as Language) || "en";
+  });
+  const [claimStatus, setClaimStatus] = useState("pending");
+  const [actionTaken, setActionTaken] = useState(false);
+  const { toast } = useToast();
+  
+  const t = translations[language];
+
+  const handleApprove = () => {
+    setClaimStatus("approved");
+    setActionTaken(true);
+    toast({
+      title: t.claimApprovedSuccess,
+      description: "The claim has been approved and the customer will be notified.",
+    });
+  };
+
+  const handleReject = () => {
+    setClaimStatus("rejected");
+    setActionTaken(true);
+    toast({
+      title: t.claimRejectedSuccess,
+      description: "The claim has been rejected and the customer will be notified.",
+      variant: "destructive",
+    });
+  };
+
+  const handleRequestInfo = () => {
+    setClaimStatus("info-requested");
+    setActionTaken(true);
+    toast({
+      title: t.moreInfoRequested,
+      description: "A request for additional information has been sent to the customer.",
+    });
+  };
 
   // Mock claim data - OPD focused
   const claimData = {
