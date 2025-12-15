@@ -8,53 +8,19 @@ const corsHeaders = {
 
 // OPD Validation Points from Janashakthi requirements
 const OPD_VALIDATION_RULES = {
-  bill_date_check: {
-    weight: 0.10,
-    description: "Bill Date must be clearly visible and valid"
-  },
-  warranty_period_check: {
-    weight: 0.10,
-    description: "Claim must be submitted within the warranty period (typically 30 days)"
-  },
-  submitted_clause_check: {
-    weight: 0.05,
-    description: "Submitted clause must be clearly mentioned in claim documents"
-  },
-  name_matching_check: {
-    weight: 0.10,
-    description: "Name on Prescription must match policyholder or covered member"
-  },
-  claim_amount_check: {
-    weight: 0.10,
-    description: "Claim amount must align with policy limits"
-  },
-  prescription_bill_medicine_match: {
-    weight: 0.15,
-    description: "Medicines billed must match prescription (even with different brand names)"
-  },
-  prescription_bill_quantity_match: {
-    weight: 0.10,
-    description: "Quantity in bill must match prescription"
-  },
-  ailment_coverage_check: {
-    weight: 0.10,
-    description: "Ailment must fall under covered ailments as per policy"
-  },
-  exclusion_check: {
-    weight: 0.10,
-    description: "Exclude vitamins, cosmetics, and non-covered medicines"
-  },
-  channelling_bill_check: {
-    weight: 0.05,
-    description: "Verify channelling bill legitimacy and consistency with standard charges"
-  },
-  bill_amount_abnormality_check: {
-    weight: 0.05,
-    description: "Identify unusually high or inconsistent billing amounts"
-  }
+  bill_date_check: { weight: 0.10, description: "Bill Date must be clearly visible and valid" },
+  warranty_period_check: { weight: 0.10, description: "Claim must be submitted within the warranty period (typically 30 days)" },
+  submitted_clause_check: { weight: 0.05, description: "Submitted clause must be clearly mentioned in claim documents" },
+  name_matching_check: { weight: 0.10, description: "Name on Prescription must match policyholder or covered member" },
+  claim_amount_check: { weight: 0.10, description: "Claim amount must align with policy limits" },
+  prescription_bill_medicine_match: { weight: 0.15, description: "Medicines billed must match prescription (even with different brand names)" },
+  prescription_bill_quantity_match: { weight: 0.10, description: "Quantity in bill must match prescription" },
+  ailment_coverage_check: { weight: 0.10, description: "Ailment must fall under covered ailments as per policy" },
+  exclusion_check: { weight: 0.10, description: "Exclude vitamins, cosmetics, and non-covered medicines" },
+  channelling_bill_check: { weight: 0.05, description: "Verify channelling bill legitimacy and consistency with standard charges" },
+  bill_amount_abnormality_check: { weight: 0.05, description: "Identify unusually high or inconsistent billing amounts" }
 };
 
-// Scoring weights for OPD validation
 const SCORING_WEIGHTS = {
   prescription_diagnosis: 0.35,
   prescription_bill: 0.30,
@@ -62,24 +28,110 @@ const SCORING_WEIGHTS = {
   billing_policy: 0.15
 };
 
+async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userId?: string; isAdmin?: boolean; isBranch?: boolean; error?: string }> {
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return { authenticated: false, error: "Missing authorization" };
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  
+  if (token === SUPABASE_SERVICE_ROLE_KEY || token === SUPABASE_ANON_KEY) {
+    const supabase = createClient(SUPABASE_URL!, token, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      return { authenticated: false, error: "Invalid token" };
+    }
+    
+    const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const { data: roleData } = await serviceSupabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    
+    return {
+      authenticated: true,
+      userId: user.id,
+      isAdmin: roleData?.role === "admin",
+      isBranch: roleData?.role === "branch",
+    };
+  }
+
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { authenticated: false, error: "Invalid or expired token" };
+  }
+
+  const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  const { data: roleData } = await serviceSupabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return {
+    authenticated: true,
+    userId: user.id,
+    isAdmin: roleData?.role === "admin",
+    isBranch: roleData?.role === "branch",
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth.authenticated) {
+      console.log("Authentication failed:", auth.error);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { claimId } = await req.json();
-    console.log(`Validating OPD claim: ${claimId}`);
+    console.log(`Validating OPD claim: ${claimId}, user: ${auth.userId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+      throw new Error("Server configuration error");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // Verify user has access to this claim
+    if (!auth.isAdmin && !auth.isBranch) {
+      const { data: claim } = await supabase
+        .from("claims")
+        .select("user_id")
+        .eq("id", claimId)
+        .maybeSingle();
+      
+      if (!claim || claim.user_id !== auth.userId) {
+        return new Response(JSON.stringify({ error: "Access denied" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Update processing status
     await supabase
@@ -114,7 +166,7 @@ serve(async (req) => {
       .from("disease_medicine_mapping")
       .select("*");
 
-    // Get previous claims for this policy/member (for remaining coverage calculation)
+    // Get previous claims for this policy/member
     const { data: previousClaims } = await supabase
       .from("claims")
       .select("claim_amount, approved_amount, claim_type, date_of_treatment")
@@ -124,7 +176,7 @@ serve(async (req) => {
 
     const previousClaimsTotal = previousClaims?.reduce((sum, c) => sum + (c.approved_amount || 0), 0) || 0;
 
-    // Calculate warranty period (default 30 days)
+    // Calculate warranty period
     const warrantyDays = claim.policy?.warranty_period_days || 30;
     const claimDate = new Date(claim.created_at);
     const treatmentDate = claim.date_of_treatment ? new Date(claim.date_of_treatment) : null;
@@ -132,8 +184,7 @@ serve(async (req) => {
       ? (claimDate.getTime() - treatmentDate.getTime()) / (1000 * 60 * 60 * 24) <= warrantyDays
       : true;
 
-    // Prepare comprehensive OPD validation prompt
-    const systemPrompt = `You are an expert OPD (Outpatient Department) insurance claim validator for Janashakthi Insurance in Sri Lanka.
+    const systemPrompt = `You are an expert OPD insurance claim validator for Janashakthi Insurance in Sri Lanka.
 
 Validate this OPD claim based on the following 15 validation points:
 
@@ -296,9 +347,8 @@ Return comprehensive validation results with detailed scoring for each check.`;
     });
 
     if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error("AI validation error:", errorText);
-      throw new Error("AI validation failed");
+      console.error("AI validation error:", await aiResponse.text());
+      throw new Error("Validation failed");
     }
 
     const aiData = await aiResponse.json();
@@ -390,9 +440,7 @@ Return comprehensive validation results with detailed scoring for each check.`;
     });
   } catch (error) {
     console.error("Error validating claim:", error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : "Unknown error" 
-    }), {
+    return new Response(JSON.stringify({ error: "Validation failed" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

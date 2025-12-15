@@ -85,24 +85,112 @@ const OPD_VALIDATION_POINTS = [
   "Dental and Spectacle Claims (only if sub-cover under OPD)"
 ];
 
+async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userId?: string; isAdmin?: boolean; isBranch?: boolean; error?: string }> {
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return { authenticated: false, error: "Missing authorization" };
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  
+  // Allow service role for internal calls
+  if (token === SUPABASE_SERVICE_ROLE_KEY || token === SUPABASE_ANON_KEY) {
+    // For anon key, still need to verify the actual user
+    const supabase = createClient(SUPABASE_URL!, token, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      return { authenticated: false, error: "Invalid token" };
+    }
+    
+    const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const { data: roleData } = await serviceSupabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    
+    return {
+      authenticated: true,
+      userId: user.id,
+      isAdmin: roleData?.role === "admin",
+      isBranch: roleData?.role === "branch",
+    };
+  }
+
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { authenticated: false, error: "Invalid or expired token" };
+  }
+
+  const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  const { data: roleData } = await serviceSupabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return {
+    authenticated: true,
+    userId: user.id,
+    isAdmin: roleData?.role === "admin",
+    isBranch: roleData?.role === "branch",
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth.authenticated) {
+      console.log("Authentication failed:", auth.error);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { claimId, documentId, fileUrl, claimType } = await req.json();
-    console.log(`Processing OPD document for claim: ${claimId}, document: ${documentId}`);
+    console.log(`Processing OPD document for claim: ${claimId}, document: ${documentId}, user: ${auth.userId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+      throw new Error("Server configuration error");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // Verify user has access to this claim
+    if (!auth.isAdmin && !auth.isBranch) {
+      const { data: claim } = await supabase
+        .from("claims")
+        .select("user_id")
+        .eq("id", claimId)
+        .maybeSingle();
+      
+      if (!claim || claim.user_id !== auth.userId) {
+        return new Response(JSON.stringify({ error: "Access denied" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Update claim processing status
     await supabase
@@ -285,9 +373,8 @@ Return a JSON object with complete entity extraction for OPD claim processing.`;
     });
 
     if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error("AI API error:", errorText);
-      throw new Error(`AI analysis failed: ${aiResponse.status}`);
+      console.error("AI API error:", await aiResponse.text());
+      throw new Error("Document analysis failed");
     }
 
     const aiData = await aiResponse.json();
@@ -411,9 +498,7 @@ Return a JSON object with complete entity extraction for OPD claim processing.`;
     });
   } catch (error) {
     console.error("Error processing document:", error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : "Unknown error" 
-    }), {
+    return new Response(JSON.stringify({ error: "Processing failed" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

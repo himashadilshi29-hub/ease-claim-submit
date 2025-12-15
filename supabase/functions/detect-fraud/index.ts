@@ -6,24 +6,110 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userId?: string; isAdmin?: boolean; isBranch?: boolean; error?: string }> {
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return { authenticated: false, error: "Missing authorization" };
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  
+  if (token === SUPABASE_SERVICE_ROLE_KEY || token === SUPABASE_ANON_KEY) {
+    const supabase = createClient(SUPABASE_URL!, token, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      return { authenticated: false, error: "Invalid token" };
+    }
+    
+    const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const { data: roleData } = await serviceSupabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    
+    return {
+      authenticated: true,
+      userId: user.id,
+      isAdmin: roleData?.role === "admin",
+      isBranch: roleData?.role === "branch",
+    };
+  }
+
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { authenticated: false, error: "Invalid or expired token" };
+  }
+
+  const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  const { data: roleData } = await serviceSupabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return {
+    authenticated: true,
+    userId: user.id,
+    isAdmin: roleData?.role === "admin",
+    isBranch: roleData?.role === "branch",
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth.authenticated) {
+      console.log("Authentication failed:", auth.error);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { claimId } = await req.json();
-    console.log(`Running OPD fraud detection for claim: ${claimId}`);
+    console.log(`Running OPD fraud detection for claim: ${claimId}, user: ${auth.userId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+      throw new Error("Server configuration error");
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // Verify user has access to this claim
+    if (!auth.isAdmin && !auth.isBranch) {
+      const { data: claim } = await supabase
+        .from("claims")
+        .select("user_id")
+        .eq("id", claimId)
+        .maybeSingle();
+      
+      if (!claim || claim.user_id !== auth.userId) {
+        return new Response(JSON.stringify({ error: "Access denied" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Update processing status
     await supabase
@@ -63,34 +149,32 @@ serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(200);
 
-    // Check for potential duplicates based on content (same policy, similar amount, same period)
+    // Check for potential duplicates
     const { data: potentialDuplicates } = await supabase
       .from("claims")
       .select("id, reference_number, claim_amount, diagnosis, hospital_name, date_of_treatment, created_at")
       .neq("id", claimId)
       .eq("policy_id", claim.policy_id)
-      .gte("created_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()); // Last 90 days
+      .gte("created_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
 
-    // Check claims from same provider (hospital/doctor)
+    // Check claims from same provider
     const { data: providerClaims } = await supabase
       .from("claims")
       .select("id, claim_amount, created_at")
       .eq("hospital_name", claim.hospital_name)
-      .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()); // Last 30 days
+      .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
-    // Calculate historical baselines for OPD claims
+    // Calculate historical baselines
     const opdClaims = historicalClaims?.filter(c => c.claim_type === 'opd') || [];
     const avgClaimAmount = opdClaims.reduce((sum, c) => sum + (c.claim_amount || 0), 0) / (opdClaims.length || 1);
     const stdDevAmount = Math.sqrt(
       opdClaims.reduce((sum, c) => sum + Math.pow((c.claim_amount || 0) - avgClaimAmount, 2), 0) / (opdClaims.length || 1)
     );
 
-    // Calculate amount deviation
     const amountDeviation = avgClaimAmount > 0 
       ? ((claim.claim_amount - avgClaimAmount) / avgClaimAmount) * 100 
       : 0;
 
-    // Prepare fraud detection prompt
     const systemPrompt = `You are an expert OPD insurance fraud detection system for Janashakthi Insurance in Sri Lanka.
 
 Analyze this OPD claim for potential fraud indicators:
@@ -219,9 +303,8 @@ Fraud Detection Thresholds:
     });
 
     if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error("AI fraud detection error:", errorText);
-      throw new Error("AI fraud detection failed");
+      console.error("AI fraud detection error:", await aiResponse.text());
+      throw new Error("Fraud detection failed");
     }
 
     const aiData = await aiResponse.json();
@@ -303,9 +386,7 @@ Fraud Detection Thresholds:
     });
   } catch (error) {
     console.error("Error in fraud detection:", error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : "Unknown error" 
-    }), {
+    return new Response(JSON.stringify({ error: "Fraud detection failed" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -6,6 +6,66 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userId?: string; isAdmin?: boolean; isBranch?: boolean; error?: string }> {
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return { authenticated: false, error: "Missing authorization" };
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  
+  if (token === SUPABASE_SERVICE_ROLE_KEY || token === SUPABASE_ANON_KEY) {
+    const supabase = createClient(SUPABASE_URL!, token, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      return { authenticated: false, error: "Invalid token" };
+    }
+    
+    const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const { data: roleData } = await serviceSupabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    
+    return {
+      authenticated: true,
+      userId: user.id,
+      isAdmin: roleData?.role === "admin",
+      isBranch: roleData?.role === "branch",
+    };
+  }
+
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { authenticated: false, error: "Invalid or expired token" };
+  }
+
+  const serviceSupabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  const { data: roleData } = await serviceSupabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return {
+    authenticated: true,
+    userId: user.id,
+    isAdmin: roleData?.role === "admin",
+    isBranch: roleData?.role === "branch",
+  };
+}
+
 // This function orchestrates the entire claim processing pipeline
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -13,16 +73,25 @@ serve(async (req) => {
   }
 
   try {
+    // Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth.authenticated) {
+      console.log("Authentication failed:", auth.error);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { claimId } = await req.json();
-    console.log(`Starting claim processing pipeline for: ${claimId}`);
+    console.log(`Starting claim processing pipeline for: ${claimId}, user: ${auth.userId}`);
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    // Get claim and its documents
+    // Verify user has access to this claim
     const { data: claim, error: claimError } = await supabase
       .from("claims")
       .select("*, claim_documents(*)")
@@ -33,7 +102,18 @@ serve(async (req) => {
       throw new Error("Claim not found");
     }
 
+    // Check access permissions
+    if (!auth.isAdmin && !auth.isBranch && claim.user_id !== auth.userId) {
+      return new Response(JSON.stringify({ error: "Access denied" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     console.log(`Found claim ${claim.reference_number} with ${claim.claim_documents?.length || 0} documents`);
+
+    // Get the auth header to pass to sub-functions
+    const authHeader = req.headers.get("Authorization") || "";
 
     const pipelineResults = {
       ocr: [] as any[],
@@ -49,7 +129,7 @@ serve(async (req) => {
         const ocrResponse = await fetch(`${SUPABASE_URL}/functions/v1/process-claim-document`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            Authorization: authHeader,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -64,6 +144,8 @@ serve(async (req) => {
           const ocrResult = await ocrResponse.json();
           pipelineResults.ocr.push(ocrResult);
           console.log(`OCR completed for document ${doc.id}: confidence ${ocrResult.ocr_result?.ocr_confidence || 0}%`);
+        } else {
+          console.error(`OCR failed for document ${doc.id}:`, await ocrResponse.text());
         }
       } catch (ocrError) {
         console.error(`OCR failed for document ${doc.id}:`, ocrError);
@@ -95,7 +177,7 @@ serve(async (req) => {
       const validationResponse = await fetch(`${SUPABASE_URL}/functions/v1/validate-claim`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ claimId }),
@@ -104,6 +186,8 @@ serve(async (req) => {
       if (validationResponse.ok) {
         pipelineResults.validation = await validationResponse.json();
         console.log(`Validation completed: score ${pipelineResults.validation?.validation_result?.overall_validation_score || 0}`);
+      } else {
+        console.error("Validation failed:", await validationResponse.text());
       }
     } catch (validationError) {
       console.error("Validation failed:", validationError);
@@ -115,7 +199,7 @@ serve(async (req) => {
       const fraudResponse = await fetch(`${SUPABASE_URL}/functions/v1/detect-fraud`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ claimId }),
@@ -124,6 +208,8 @@ serve(async (req) => {
       if (fraudResponse.ok) {
         pipelineResults.fraud = await fraudResponse.json();
         console.log(`Fraud detection completed: score ${pipelineResults.fraud?.fraud_result?.fraud_score || 0}`);
+      } else {
+        console.error("Fraud detection failed:", await fraudResponse.text());
       }
     } catch (fraudError) {
       console.error("Fraud detection failed:", fraudError);
@@ -135,7 +221,7 @@ serve(async (req) => {
       const settlementResponse = await fetch(`${SUPABASE_URL}/functions/v1/calculate-settlement`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ claimId }),
@@ -144,6 +230,8 @@ serve(async (req) => {
       if (settlementResponse.ok) {
         pipelineResults.settlement = await settlementResponse.json();
         console.log(`Settlement calculated: decision ${pipelineResults.settlement?.settlement?.decision}`);
+      } else {
+        console.error("Settlement calculation failed:", await settlementResponse.text());
       }
     } catch (settlementError) {
       console.error("Settlement calculation failed:", settlementError);
@@ -171,9 +259,7 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error("Pipeline error:", error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : "Unknown error" 
-    }), {
+    return new Response(JSON.stringify({ error: "Pipeline processing failed" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
