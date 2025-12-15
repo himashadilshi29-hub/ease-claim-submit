@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { 
   Eye, Search, Download, Filter, User, RefreshCw, 
   Brain, Shield, FileText, CheckCircle, XCircle, Clock,
-  AlertTriangle, TrendingUp, Activity
+  AlertTriangle, TrendingUp, Activity, LogIn, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ import { useLanguage } from "@/lib/i18n";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Claim {
   id: string;
@@ -53,9 +54,10 @@ interface Claim {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [username, setUsername] = useState("");
+  const { user, portal, loading, signIn, signOut } = useAuth();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -74,18 +76,49 @@ const AdminDashboard = () => {
   });
   const { t } = useLanguage();
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (username && password) {
-      setIsLoggedIn(true);
+  // Check if user is authenticated and has admin role
+  const isAdmin = user && portal === 'admin';
+  const isAuthenticated = !!user;
+
+  // Redirect non-admin users after auth check completes
+  useEffect(() => {
+    if (!loading && isAuthenticated && portal && portal !== 'admin') {
+      toast.error("Access denied. Admin privileges required.");
+      navigate("/");
     }
+  }, [loading, isAuthenticated, portal, navigate]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!email || !password) {
+      toast.error("Please enter email and password");
+      return;
+    }
+    
+    setIsSigningIn(true);
+    
+    const { error } = await signIn(email, password);
+    
+    if (error) {
+      toast.error(error.message || "Failed to sign in");
+    } else {
+      toast.success("Signed in successfully");
+    }
+    
+    setIsSigningIn(false);
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/");
   };
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isAdmin) {
       fetchClaims();
     }
-  }, [isLoggedIn, statusFilter]);
+  }, [isAdmin, statusFilter]);
 
   const fetchClaims = async () => {
     setIsLoading(true);
@@ -174,8 +207,20 @@ const AdminDashboard = () => {
     );
   });
 
-  // Login Screen
-  if (!isLoggedIn) {
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Login Screen - Show when not authenticated
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar variant="gradient" />
@@ -188,25 +233,26 @@ const AdminDashboard = () => {
           >
             <div className="glass-card p-8 text-center">
               <div className="w-16 h-16 rounded-full gradient-primary mx-auto mb-6 flex items-center justify-center">
-                <User className="w-8 h-8 text-white" />
+                <LogIn className="w-8 h-8 text-white" />
               </div>
               
               <h1 className="text-2xl font-bold text-foreground mb-2">
                 {t.adminLogin}
               </h1>
               <p className="text-muted-foreground mb-6">
-                {t.adminLoginSubtitle}
+                Sign in with your admin credentials
               </p>
               
               <form onSubmit={handleLogin} className="space-y-4 text-left">
                 <div className="space-y-2">
-                  <Label htmlFor="username">{t.username}</Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input
-                    id="username"
-                    type="text"
-                    placeholder={t.enterUsername}
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    id="email"
+                    type="email"
+                    placeholder="admin@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isSigningIn}
                   />
                 </div>
                 
@@ -218,16 +264,44 @@ const AdminDashboard = () => {
                     placeholder={t.enterPassword}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={isSigningIn}
                   />
                 </div>
                 
-                <Button type="submit" className="w-full" variant="hero">
-                  {t.login}
+                <Button type="submit" className="w-full" variant="hero" disabled={isSigningIn}>
+                  {isSigningIn ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    t.login
+                  )}
                 </Button>
               </form>
+              
+              <p className="text-xs text-muted-foreground mt-4">
+                Only users with admin role can access this dashboard
+              </p>
             </div>
           </motion.div>
         </main>
+      </div>
+    );
+  }
+
+  // Access denied - authenticated but not admin
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Shield className="w-12 h-12 text-destructive mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-foreground mb-2">Access Denied</h2>
+          <p className="text-muted-foreground mb-4">You don't have admin privileges to access this page.</p>
+          <Button variant="outline" onClick={() => navigate("/")}>
+            Go to Home
+          </Button>
+        </div>
       </div>
     );
   }
@@ -332,7 +406,7 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar variant="gradient" showLogout onLogout={() => navigate("/")} />
+      <Navbar variant="gradient" showLogout onLogout={handleLogout} />
 
       <main className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-8">
@@ -466,47 +540,51 @@ const AdminDashboard = () => {
                 </TableHeader>
                 <TableBody>
                   {filteredClaims.map((claim) => (
-                    <TableRow key={claim.id}>
-                      <TableCell className="font-medium">{claim.reference_number}</TableCell>
+                    <TableRow key={claim.id} className="hover:bg-muted/50">
+                      <TableCell className="font-medium">
+                        <button 
+                          onClick={() => navigate(`/admin/claim/${claim.id}`)}
+                          className="text-primary hover:underline"
+                        >
+                          {claim.reference_number}
+                        </button>
+                      </TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{claim.profiles?.full_name || "Unknown"}</p>
-                          <p className="text-xs text-muted-foreground">{claim.profiles?.nic || "-"}</p>
+                          <p className="font-medium">{claim.profiles?.full_name || "N/A"}</p>
+                          <p className="text-xs text-muted-foreground">{claim.profiles?.nic || "—"}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="uppercase">{claim.claim_type}</TableCell>
+                      <TableCell className="capitalize">{claim.claim_type}</TableCell>
                       <TableCell>LKR {claim.claim_amount?.toLocaleString()}</TableCell>
                       <TableCell>{getRiskBadge(claim.risk_score, claim.risk_level)}</TableCell>
                       <TableCell>{getFraudBadge(claim.fraud_status, claim.fraud_flags)}</TableCell>
                       <TableCell>{getOcrBadge(claim.ocr_confidence)}</TableCell>
                       <TableCell>{getStatusBadge(claim.status)}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button 
-                            variant="ghost" 
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
                             size="icon"
-                            onClick={() => navigate(`/admin/claim/${claim.reference_number}`)}
-                            title="View Details"
+                            onClick={() => navigate(`/admin/claim/${claim.id}`)}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
                           {claim.status === "pending" && (
                             <>
-                              <Button 
-                                variant="ghost" 
+                              <Button
+                                variant="ghost"
                                 size="icon"
-                                onClick={() => handleApprove(claim.id)}
-                                title="Approve"
                                 className="text-green-600 hover:text-green-700"
+                                onClick={() => handleApprove(claim.id)}
                               >
                                 <CheckCircle className="w-4 h-4" />
                               </Button>
-                              <Button 
-                                variant="ghost" 
+                              <Button
+                                variant="ghost"
                                 size="icon"
-                                onClick={() => handleReject(claim.id)}
-                                title="Reject"
                                 className="text-red-600 hover:text-red-700"
+                                onClick={() => handleReject(claim.id)}
                               >
                                 <XCircle className="w-4 h-4" />
                               </Button>
