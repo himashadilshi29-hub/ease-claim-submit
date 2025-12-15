@@ -13,7 +13,7 @@ serve(async (req) => {
 
   try {
     const { claimId } = await req.json();
-    console.log(`Calculating settlement for claim: ${claimId}`);
+    console.log(`Calculating OPD settlement for claim: ${claimId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -34,7 +34,7 @@ serve(async (req) => {
     // Get all claim data
     const { data: claim } = await supabase
       .from("claims")
-      .select("*, policy:policies(*)")
+      .select("*, policy:policies(*), member:policy_members(*)")
       .eq("id", claimId)
       .single();
 
@@ -47,14 +47,14 @@ serve(async (req) => {
       .from("claim_validations")
       .select("*")
       .eq("claim_id", claimId)
-      .single();
+      .maybeSingle();
 
     // Get fraud results
     const { data: fraudResult } = await supabase
       .from("fraud_detection_results")
       .select("*")
       .eq("claim_id", claimId)
-      .single();
+      .maybeSingle();
 
     // Get OCR results for billing items
     const { data: ocrResults } = await supabase
@@ -62,13 +62,10 @@ serve(async (req) => {
       .select("*")
       .eq("claim_id", claimId);
 
-    // Calculate settlement
-    const policyLimit = claim.claim_type === 'hospitalization' 
-      ? (claim.policy?.hospitalization_limit || 0)
-      : (claim.policy?.opd_limit || 0);
-    
+    // Calculate settlement for OPD claims
+    const opdLimit = claim.policy?.opd_limit || 0;
     const previousClaimsTotal = validation?.previous_claims_total || 0;
-    const remainingCoverage = policyLimit - previousClaimsTotal;
+    const remainingCoverage = opdLimit - previousClaimsTotal;
     const validatedBilledTotal = claim.claim_amount || 0;
     const maxPayable = Math.min(remainingCoverage, validatedBilledTotal);
     const coPaymentPercentage = claim.policy?.co_payment_percentage || 0;
@@ -84,18 +81,62 @@ serve(async (req) => {
     let decision = "manual_review";
     let decisionReason = "";
 
+    // Decision logic based on Janashakthi requirements
     if (anomalyScore >= 0.9 && fraudScore < 0.3 && validationScore >= 0.8) {
       decision = "auto_approve";
-      decisionReason = "All validation checks passed with high confidence";
+      decisionReason = "All OPD validation checks passed with high confidence. No fraud indicators detected.";
     } else if (fraudScore >= 0.7 || validationScore < 0.5) {
       decision = "reject";
       decisionReason = fraudScore >= 0.7 
-        ? "High fraud risk detected" 
-        : "Validation score too low";
+        ? "High fraud risk detected - claim flagged for investigation" 
+        : "Validation score too low - multiple OPD validation points failed";
     } else {
       decision = "manual_review";
-      decisionReason = "Borderline scores require human review";
+      decisionReason = "Borderline scores require human review. This claim will be routed to IBPS for standard claim flow.";
     }
+
+    // Extract covered and non-covered items from OCR
+    const coveredItems: any[] = [];
+    const nonCoveredItems: any[] = [];
+    
+    ocrResults?.forEach(result => {
+      try {
+        const rawText = result.raw_text;
+        const parsedData = typeof rawText === 'string' ? JSON.parse(rawText) : rawText;
+        const entities = parsedData?.entities || result.extracted_entities;
+        
+        if (entities?.billing?.items) {
+          entities.billing.items.forEach((item: any) => {
+            const itemName = typeof item === 'string' ? item : item.description;
+            const itemAmount = typeof item === 'object' ? item.amount : 0;
+            const lowerItem = itemName?.toLowerCase() || '';
+            
+            if (lowerItem.includes('vitamin') || lowerItem.includes('cosmetic') || 
+                lowerItem.includes('supplement') || lowerItem.includes('beauty')) {
+              nonCoveredItems.push({ description: itemName, amount: itemAmount, reason: 'Excluded item' });
+            } else {
+              coveredItems.push({ description: itemName, amount: itemAmount });
+            }
+          });
+        }
+        
+        // Check for vitamins in medicines
+        if (entities?.medicines) {
+          entities.medicines.forEach((med: any) => {
+            if (med.is_vitamin || med.is_cosmetic || !med.is_covered) {
+              nonCoveredItems.push({ 
+                description: med.name, 
+                amount: 0, 
+                reason: med.is_vitamin ? 'Vitamin - not covered' : 
+                        med.is_cosmetic ? 'Cosmetic - not covered' : 'Not covered under policy'
+              });
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Error parsing OCR result:", e);
+      }
+    });
 
     // Generate AI summary
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -109,21 +150,44 @@ serve(async (req) => {
         messages: [
           { 
             role: "system", 
-            content: "You are an insurance claim settlement expert. Generate a concise summary of the settlement decision." 
+            content: `You are an OPD insurance claim settlement expert for Janashakthi Insurance. Generate a professional, concise summary of the settlement decision.
+            
+Include:
+1. Brief claim overview
+2. Key validation findings
+3. Exclusions applied (if any)
+4. Settlement calculation breakdown
+5. Final recommendation
+
+Keep the summary professional and suitable for claim documentation.` 
           },
           { 
             role: "user", 
-            content: `Generate a settlement summary for claim ${claim.reference_number}:
-            - Claim Amount: LKR ${validatedBilledTotal}
-            - Policy Limit: LKR ${policyLimit}
-            - Remaining Coverage: LKR ${remainingCoverage}
-            - Co-payment: ${coPaymentPercentage}% (LKR ${coPaymentAmount})
-            - Insurer Payment: LKR ${insurerPayment}
-            - Decision: ${decision}
-            - Reason: ${decisionReason}
-            - Anomaly Score: ${anomalyScore}
-            - Fraud Score: ${fraudScore}
-            - Validation Score: ${validationScore}` 
+            content: `Generate an OPD settlement summary for claim ${claim.reference_number}:
+
+Claimant: ${claim.member?.member_name || 'Unknown'}
+Claim Type: ${claim.claim_type}
+Diagnosis: ${claim.diagnosis || 'Not specified'}
+Date of Treatment: ${claim.date_of_treatment || 'Not specified'}
+
+Financial Summary:
+- Claim Amount: LKR ${validatedBilledTotal.toLocaleString()}
+- OPD Policy Limit: LKR ${opdLimit.toLocaleString()}
+- Previous Claims Used: LKR ${previousClaimsTotal.toLocaleString()}
+- Remaining Coverage: LKR ${remainingCoverage.toLocaleString()}
+- Co-payment (${coPaymentPercentage}%): LKR ${coPaymentAmount.toLocaleString()}
+- Deductible: LKR ${deductible.toLocaleString()}
+- Insurer Payment: LKR ${insurerPayment.toLocaleString()}
+
+Validation Results:
+- Overall Validation Score: ${(validationScore * 100).toFixed(1)}%
+- Anomaly Score: ${(anomalyScore * 100).toFixed(1)}%
+- Fraud Score: ${(fraudScore * 100).toFixed(1)}%
+
+Excluded Items: ${nonCoveredItems.length > 0 ? nonCoveredItems.map(i => i.description).join(', ') : 'None'}
+
+Decision: ${decision.replace('_', ' ').toUpperCase()}
+Reason: ${decisionReason}` 
           },
         ],
       }),
@@ -135,31 +199,13 @@ serve(async (req) => {
       aiSummary = aiData.choices?.[0]?.message?.content || "";
     }
 
-    // Extract covered and non-covered items from OCR
-    const coveredItems: string[] = [];
-    const nonCoveredItems: string[] = [];
-    
-    ocrResults?.forEach(result => {
-      const entities = result.extracted_entities as any;
-      if (entities?.billing?.items) {
-        entities.billing.items.forEach((item: string) => {
-          const lowerItem = item.toLowerCase();
-          if (lowerItem.includes('vitamin') || lowerItem.includes('cosmetic')) {
-            nonCoveredItems.push(item);
-          } else {
-            coveredItems.push(item);
-          }
-        });
-      }
-    });
-
     // Store settlement calculation
     const { error: settlementError } = await supabase.from("settlement_calculations").upsert({
       claim_id: claimId,
       validated_billed_total: validatedBilledTotal,
       covered_items: coveredItems,
       non_covered_items: nonCoveredItems,
-      policy_limit: policyLimit,
+      policy_limit: opdLimit,
       previous_claims_total: previousClaimsTotal,
       remaining_coverage: remainingCoverage,
       max_payable_amount: maxPayable,
@@ -169,6 +215,8 @@ serve(async (req) => {
       insurer_payment: insurerPayment,
       decision: decision,
       decision_reason: decisionReason,
+      settlement_date: decision === "auto_approve" ? new Date().toISOString() : null,
+      approval_letter_generated: decision === "auto_approve",
     }, { onConflict: 'claim_id' });
 
     if (settlementError) {
@@ -176,21 +224,25 @@ serve(async (req) => {
     }
 
     // Update claim with final status
-    let finalStatus = "manual_review";
+    let finalProcessingStatus = "manual_review";
     let claimStatus = "pending";
     
     if (decision === "auto_approve") {
-      finalStatus = "auto_approved";
+      finalProcessingStatus = "auto_approved";
       claimStatus = "approved";
     } else if (decision === "reject") {
-      finalStatus = "auto_rejected";
+      finalProcessingStatus = "auto_rejected";
       claimStatus = "rejected";
+    } else {
+      // Manual review - will be integrated with IBPS
+      finalProcessingStatus = "manual_review";
+      claimStatus = "manual-review";
     }
 
     await supabase
       .from("claims")
       .update({ 
-        processing_status: finalStatus,
+        processing_status: finalProcessingStatus,
         status: claimStatus,
         approved_amount: decision === "auto_approve" ? insurerPayment : null,
         settled_amount: decision === "auto_approve" ? insurerPayment : null,
@@ -199,27 +251,34 @@ serve(async (req) => {
       .eq("id", claimId);
 
     // Add to claim history
-    await supabase.from("claim_history").insert({
+    await supabase.from("claim_history").insert([{
       claim_id: claimId,
       action: `AI ${decision.replace('_', ' ')}`,
-      previous_status: "pending",
-      new_status: claimStatus,
+      previous_status: "pending" as const,
+      new_status: claimStatus as any,
       notes: aiSummary || decisionReason,
-    });
+    }]);
 
     return new Response(JSON.stringify({
       success: true,
       claim_id: claimId,
       settlement: {
         validated_billed_total: validatedBilledTotal,
-        policy_limit: policyLimit,
+        opd_limit: opdLimit,
         remaining_coverage: remainingCoverage,
         max_payable: maxPayable,
         co_payment: coPaymentAmount,
         deductible: deductible,
         insurer_payment: insurerPayment,
+        covered_items: coveredItems,
+        non_covered_items: nonCoveredItems,
         decision: decision,
         decision_reason: decisionReason,
+      },
+      scores: {
+        validation_score: validationScore,
+        anomaly_score: anomalyScore,
+        fraud_score: fraudScore
       },
       ai_summary: aiSummary,
     }), {

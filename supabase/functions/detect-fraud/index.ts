@@ -13,7 +13,7 @@ serve(async (req) => {
 
   try {
     const { claimId } = await req.json();
-    console.log(`Running fraud detection for claim: ${claimId}`);
+    console.log(`Running OPD fraud detection for claim: ${claimId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -34,7 +34,7 @@ serve(async (req) => {
     // Get claim details
     const { data: claim, error: claimError } = await supabase
       .from("claims")
-      .select("*")
+      .select("*, policy:policies(*), member:policy_members(*)")
       .eq("id", claimId)
       .single();
 
@@ -54,65 +54,107 @@ serve(async (req) => {
       .select("*")
       .eq("claim_id", claimId);
 
-    // Get historical claims for baseline comparison
+    // Get historical OPD claims for baseline comparison
     const { data: historicalClaims } = await supabase
       .from("claims")
       .select("*, claim_documents(*)")
+      .in("claim_type", ["opd", "dental", "spectacles"])
       .neq("id", claimId)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(200);
 
-    // Check for potential duplicates based on content
+    // Check for potential duplicates based on content (same policy, similar amount, same period)
     const { data: potentialDuplicates } = await supabase
       .from("claims")
-      .select("id, reference_number, claim_amount, diagnosis, hospital_name, created_at")
+      .select("id, reference_number, claim_amount, diagnosis, hospital_name, date_of_treatment, created_at")
       .neq("id", claimId)
       .eq("policy_id", claim.policy_id)
       .gte("created_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()); // Last 90 days
 
-    // Calculate historical baselines
-    const avgClaimAmount = historicalClaims?.reduce((sum, c) => sum + (c.claim_amount || 0), 0) / (historicalClaims?.length || 1);
+    // Check claims from same provider (hospital/doctor)
+    const { data: providerClaims } = await supabase
+      .from("claims")
+      .select("id, claim_amount, created_at")
+      .eq("hospital_name", claim.hospital_name)
+      .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()); // Last 30 days
+
+    // Calculate historical baselines for OPD claims
+    const opdClaims = historicalClaims?.filter(c => c.claim_type === 'opd') || [];
+    const avgClaimAmount = opdClaims.reduce((sum, c) => sum + (c.claim_amount || 0), 0) / (opdClaims.length || 1);
     const stdDevAmount = Math.sqrt(
-      historicalClaims?.reduce((sum, c) => sum + Math.pow((c.claim_amount || 0) - avgClaimAmount, 2), 0) / (historicalClaims?.length || 1)
+      opdClaims.reduce((sum, c) => sum + Math.pow((c.claim_amount || 0) - avgClaimAmount, 2), 0) / (opdClaims.length || 1)
     );
 
-    // Prepare fraud detection prompt
-    const systemPrompt = `You are an expert insurance fraud detection system for Janashakthi Insurance in Sri Lanka.
-Analyze this claim for potential fraud indicators:
+    // Calculate amount deviation
+    const amountDeviation = avgClaimAmount > 0 
+      ? ((claim.claim_amount - avgClaimAmount) / avgClaimAmount) * 100 
+      : 0;
 
-1. Duplicate Detection:
-   - Check if similar claims were submitted recently
-   - Look for same bill amounts, hospitals, or procedures
+    // Prepare fraud detection prompt
+    const systemPrompt = `You are an expert OPD insurance fraud detection system for Janashakthi Insurance in Sri Lanka.
+
+Analyze this OPD claim for potential fraud indicators:
+
+1. DUPLICATE DETECTION (Policy-Level):
+   - Hash-Based: Check if same documents were submitted before
+   - Content-Based: Check for same bill amounts, hospitals, procedures
+   - Similar claims from same policy in short timeframe
    
-2. Anomaly Detection:
-   - Compare claim amount to historical average (Avg: ${avgClaimAmount.toFixed(2)}, StdDev: ${stdDevAmount.toFixed(2)})
-   - Check for unusual patterns
+2. ANOMALY DETECTION:
+   - Compare claim amount to historical average (Avg: LKR ${avgClaimAmount.toFixed(2)}, StdDev: LKR ${stdDevAmount.toFixed(2)})
+   - Amount deviation: ${amountDeviation.toFixed(2)}%
+   - Check for unusual patterns in billing
    
-3. Content Verification:
-   - Verify consistency between documents
+3. CONTENT VERIFICATION:
+   - Verify consistency between prescription and bill
    - Check for altered or suspicious content
+   - Look for inconsistencies in dates, names, amounts
    
-4. Provider Analysis:
-   - Check frequency of claims from same hospital/doctor
+4. PROVIDER ANALYSIS:
+   - Frequency of claims from same hospital: ${providerClaims?.length || 0} claims in last 30 days
+   - Check for inflated consultation fees
+   - Verify legitimacy of channelling bills
+
+5. OPD-SPECIFIC CHECKS:
+   - Multiple OPD claims for same ailment
+   - Unusually high medicine quantities
+   - Cosmetic items disguised as medical
+   - Vitamins/supplements billed as medicines
 
 Current Claim:
-- Amount: ${claim.claim_amount}
+- Amount: LKR ${claim.claim_amount}
+- Diagnosis: ${claim.diagnosis || 'Not specified'}
 - Hospital: ${claim.hospital_name || 'Not specified'}
 - Doctor: ${claim.doctor_name || 'Not specified'}
-- Diagnosis: ${claim.diagnosis || 'Not specified'}
+- Date of Treatment: ${claim.date_of_treatment || 'Not specified'}
+- Member: ${claim.member?.member_name || 'Unknown'}
 
-Potential Duplicates: ${JSON.stringify(potentialDuplicates || [])}
+Potential Duplicates Found:
+${JSON.stringify(potentialDuplicates?.map(d => ({
+  ref: d.reference_number,
+  amount: d.claim_amount,
+  diagnosis: d.diagnosis,
+  date: d.date_of_treatment
+})) || [], null, 2)}
 
-OCR Results: ${JSON.stringify(ocrResults?.map(r => ({
+OCR Extracted Data:
+${JSON.stringify(ocrResults?.map(r => ({
   type: r.document_type,
   confidence: r.ocr_confidence,
-  entities: r.extracted_entities
-})) || [])}
+  entities: r.extracted_entities,
+  validation_flags: (r.raw_text ? JSON.parse(r.raw_text as string) : {}).validation_flags
+})) || [], null, 2)}
 
-Historical Baseline:
-- Average Claim Amount: ${avgClaimAmount.toFixed(2)}
-- Standard Deviation: ${stdDevAmount.toFixed(2)}
-- Claims in Database: ${historicalClaims?.length || 0}`;
+Historical Baseline (OPD Claims):
+- Total OPD claims in database: ${opdClaims.length}
+- Average Claim Amount: LKR ${avgClaimAmount.toFixed(2)}
+- Standard Deviation: LKR ${stdDevAmount.toFixed(2)}
+- Current claim is ${amountDeviation > 0 ? 'above' : 'below'} average by ${Math.abs(amountDeviation).toFixed(2)}%
+
+Fraud Detection Thresholds:
+- Similarity ≥ 90%: Flag as potential duplicate
+- Amount > Avg + 3σ: Flag as inflated
+- Provider frequency > 10 claims/month: Flag for investigation`;
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -124,14 +166,14 @@ Historical Baseline:
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: "Analyze this claim for fraud indicators and provide detailed scoring." },
+          { role: "user", content: "Analyze this OPD claim for fraud indicators and provide detailed scoring with workflow recommendation." },
         ],
         tools: [
           {
             type: "function",
             function: {
-              name: "detect_fraud",
-              description: "Detect potential fraud in insurance claim",
+              name: "detect_opd_fraud",
+              description: "Detect potential fraud in OPD insurance claim",
               parameters: {
                 type: "object",
                 properties: {
@@ -143,14 +185,25 @@ Historical Baseline:
                   fraud_score: { type: "number", minimum: 0, maximum: 1 },
                   alerts: { type: "array", items: { type: "string" } },
                   amount_deviation_percentage: { type: "number" },
-                  stay_deviation_days: { type: "number" },
                   provider_claim_frequency: { type: "integer" },
+                  opd_specific_flags: {
+                    type: "object",
+                    properties: {
+                      multiple_claims_same_ailment: { type: "boolean" },
+                      high_medicine_quantity: { type: "boolean" },
+                      cosmetics_as_medical: { type: "boolean" },
+                      vitamins_as_medicine: { type: "boolean" },
+                      inflated_consultation_fee: { type: "boolean" },
+                      prescription_bill_mismatch: { type: "boolean" }
+                    }
+                  },
                   historical_baseline: {
                     type: "object",
                     properties: {
                       avg_amount: { type: "number" },
                       std_dev: { type: "number" },
-                      percentile: { type: "number" }
+                      percentile: { type: "number" },
+                      is_outlier: { type: "boolean" }
                     }
                   },
                   llm_analysis: { type: "string" },
@@ -161,7 +214,7 @@ Historical Baseline:
             }
           }
         ],
-        tool_choice: { type: "function", function: { name: "detect_fraud" } },
+        tool_choice: { type: "function", function: { name: "detect_opd_fraud" } },
       }),
     });
 
@@ -201,12 +254,12 @@ Historical Baseline:
       anomaly_score: fraudResult.anomaly_score,
       fraud_score: fraudResult.fraud_score,
       alerts: fraudResult.alerts || [],
-      amount_deviation_percentage: fraudResult.amount_deviation_percentage || 0,
-      stay_deviation_days: fraudResult.stay_deviation_days || 0,
-      provider_claim_frequency: fraudResult.provider_claim_frequency || 0,
+      amount_deviation_percentage: fraudResult.amount_deviation_percentage || amountDeviation,
+      provider_claim_frequency: providerClaims?.length || 0,
       historical_baseline: {
         avg_amount: avgClaimAmount,
         std_dev: stdDevAmount,
+        opd_specific_flags: fraudResult.opd_specific_flags,
         ...fraudResult.historical_baseline
       },
       llm_analysis: fraudResult.llm_analysis || "",
@@ -218,24 +271,32 @@ Historical Baseline:
     }
 
     // Update claim with fraud scores
+    const riskLevel = fraudResult.fraud_score >= 0.7 ? 'high' : fraudResult.fraud_score >= 0.4 ? 'medium' : 'low';
+    const fraudStatus = fraudResult.fraud_score >= 0.7 ? 'flagged' : fraudResult.fraud_score >= 0.4 ? 'suspicious' : 'clean';
+
     await supabase
       .from("claims")
       .update({ 
         processing_status: "fraud_check_complete",
         fraud_flags: Math.round(fraudResult.fraud_score * 10),
         risk_score: Math.round((1 - fraudResult.anomaly_score) * 100),
-        risk_level: fraudResult.fraud_score >= 0.7 ? 'high' : fraudResult.fraud_score >= 0.4 ? 'medium' : 'low',
-        fraud_status: fraudResult.fraud_score >= 0.7 ? 'flagged' : fraudResult.fraud_score >= 0.4 ? 'suspicious' : 'clean',
+        risk_level: riskLevel,
+        fraud_status: fraudStatus,
       })
       .eq("id", claimId);
 
     return new Response(JSON.stringify({
       success: true,
       claim_id: claimId,
-      fraud_result: fraudResult,
+      fraud_result: {
+        ...fraudResult,
+        provider_claim_frequency: providerClaims?.length || 0,
+        potential_duplicates_count: potentialDuplicates?.length || 0
+      },
       historical_baseline: {
         avg_amount: avgClaimAmount,
         std_dev: stdDevAmount,
+        total_opd_claims: opdClaims.length
       },
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

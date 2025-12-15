@@ -444,7 +444,6 @@ const BranchPortal = () => {
                             <SelectValue placeholder={t.placeholderClaimType} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="hospitalization">Hospitalization (HOSP)</SelectItem>
                             <SelectItem value="opd">{t.claimTypeOPD}</SelectItem>
                             <SelectItem value="dental">{t.claimTypeDental}</SelectItem>
                             <SelectItem value="spectacles">{t.claimTypeSpectacles}</SelectItem>
@@ -452,17 +451,14 @@ const BranchPortal = () => {
                         </Select>
                       </div>
                       
-                      {formData.claimType === "hospitalization" && (
-                        <div>
-                          <Label>Hospitalization Type *</Label>
-                          <Select value={formData.hospitalizationType} onValueChange={(v) => updateFormData("hospitalizationType", v)}>
-                            <SelectTrigger className="mt-1">
-                              <SelectValue placeholder="Select type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="cashless">Cashless</SelectItem>
-                              <SelectItem value="reimbursement">Reimbursement</SelectItem>
-                            </SelectContent>
+                      {/* OPD specific fields */}
+                      {formData.claimType && (
+                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                          <p className="text-sm text-blue-700">
+                            <strong>OPD Claim Requirements:</strong> Prescription + Medical Bill are mandatory. 
+                            Lab reports and channelling bills are optional.
+                          </p>
+                        </div>
                           </Select>
                         </div>
                       )}
