@@ -121,10 +121,9 @@ const AdminClaimReview = () => {
         setMember(memberData);
       }
     } catch (error) {
-      console.error("Error fetching claim:", error);
       toast({
         title: "Error",
-        description: "Failed to load claim data",
+        description: "Failed to load claim data. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -163,8 +162,7 @@ const AdminClaimReview = () => {
       });
       fetchClaimData();
     } catch (error) {
-      console.error("Error approving claim:", error);
-      toast({ title: "Error", description: "Failed to approve claim", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to approve claim. Please try again.", variant: "destructive" });
     } finally {
       setProcessing(false);
     }
@@ -207,8 +205,7 @@ const AdminClaimReview = () => {
       });
       fetchClaimData();
     } catch (error) {
-      console.error("Error rejecting claim:", error);
-      toast({ title: "Error", description: "Failed to reject claim", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to reject claim. Please try again.", variant: "destructive" });
     } finally {
       setProcessing(false);
     }
@@ -230,8 +227,7 @@ const AdminClaimReview = () => {
       });
       fetchClaimData();
     } catch (error) {
-      console.error("Error running pipeline:", error);
-      toast({ title: "Error", description: "Failed to run AI pipeline", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to run AI pipeline. Please try again.", variant: "destructive" });
     } finally {
       setProcessing(false);
     }

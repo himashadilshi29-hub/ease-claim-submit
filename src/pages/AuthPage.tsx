@@ -18,12 +18,13 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required").max(100),
 });
 
-// Demo credentials mapping
-const DEMO_CREDENTIALS: Record<string, { password: string; portal: PortalType; email: string }> = {
-  customer: { password: "customer123", portal: "customer", email: "customer@demo.com" },
-  staff: { password: "staff123", portal: "branch", email: "staff@demo.com" },
-  admin: { password: "admin123", portal: "admin", email: "admin@demo.com" },
-};
+// Demo credentials - only available in development mode
+const DEMO_CREDENTIALS: Record<string, { password: string; portal: PortalType; email: string }> = 
+  import.meta.env.DEV ? {
+    customer: { password: "customer123", portal: "customer", email: "customer@insurance.lk" },
+    staff: { password: "staff123", portal: "branch", email: "staff@insurance.lk" },
+    admin: { password: "admin123", portal: "admin", email: "admin@insurance.lk" },
+  } : {};
 
 const AuthPage = () => {
   const navigate = useNavigate();
@@ -70,7 +71,7 @@ const AuthPage = () => {
       }
     }
 
-    // Check if it's a demo credential
+    // Check if it's a demo credential (only in dev mode)
     const demoUser = DEMO_CREDENTIALS[username.toLowerCase()];
     if (demoUser && password === demoUser.password) {
       setIsLoading(true);
@@ -78,8 +79,7 @@ const AuthPage = () => {
       setIsLoading(false);
 
       if (error) {
-        // If demo user doesn't exist, create it first
-        toast.error("Demo user not configured. Please contact administrator.");
+        toast.error("Authentication failed. Please try again.");
         return;
       }
 
@@ -96,7 +96,7 @@ const AuthPage = () => {
       if (error.message.includes("Invalid login credentials")) {
         toast.error(t.authInvalidCredentials || "Invalid username or password");
       } else {
-        toast.error(error.message);
+        toast.error("Authentication failed. Please try again.");
       }
       return;
     }
@@ -111,6 +111,8 @@ const AuthPage = () => {
       </div>
     );
   }
+
+  const isDev = import.meta.env.DEV;
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -190,30 +192,32 @@ const AuthPage = () => {
               </Button>
             </form>
 
-            {/* Demo Credentials */}
-            <div className="mt-8 p-4 bg-muted/50 rounded-xl text-left">
-              <p className="text-sm font-semibold text-foreground mb-3">Demo Credentials:</p>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    <span className="font-mono">customer</span> / <span className="font-mono">customer123</span> → Digital Portal
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Building className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    <span className="font-mono">staff</span> / <span className="font-mono">staff123</span> → Branch Portal
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    <span className="font-mono">admin</span> / <span className="font-mono">admin123</span> → Admin Portal
-                  </span>
+            {/* Demo Credentials - Only show in development */}
+            {isDev && (
+              <div className="mt-8 p-4 bg-muted/50 rounded-xl text-left">
+                <p className="text-sm font-semibold text-foreground mb-3">Demo Credentials (Dev Only):</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      <span className="font-mono">customer</span> / <span className="font-mono">customer123</span> → Digital Portal
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Building className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      <span className="font-mono">staff</span> / <span className="font-mono">staff123</span> → Branch Portal
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      <span className="font-mono">admin</span> / <span className="font-mono">admin123</span> → Admin Portal
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </motion.div>
       </main>

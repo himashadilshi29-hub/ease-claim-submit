@@ -23,6 +23,23 @@ import { cn } from "@/lib/utils";
 import { useLanguage, Language } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { z } from "zod";
+
+// Input validation schemas
+const nicRegex = /^([0-9]{9}[vVxX]|[0-9]{12})$/;
+const policyRegex = /^POL-?[0-9]{4}-?[0-9]{3,6}$/i;
+
+const nicOrPolicySchema = z.string()
+  .min(1, "NIC or Policy number is required")
+  .max(50, "Input too long")
+  .refine(
+    (val) => nicRegex.test(val) || policyRegex.test(val),
+    "Please enter a valid NIC (9 digits + V/X or 12 digits) or Policy number (e.g., POL-2024-001)"
+  );
+
+const claimAmountSchema = z.string()
+  .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0, "Claim amount must be a positive number")
+  .refine((val) => parseFloat(val) <= 10000000, "Claim amount exceeds maximum limit");
 
 interface Policy {
   id: string;
@@ -89,15 +106,31 @@ const BranchPortal = () => {
   const verifyPolicy = async () => {
     if (!formData.nicOrPolicy) return;
     
+    // Validate input before querying
+    const validationResult = nicOrPolicySchema.safeParse(formData.nicOrPolicy);
+    if (!validationResult.success) {
+      toast.error(validationResult.error.errors[0].message);
+      return;
+    }
+    
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      // Use separate queries instead of string interpolation
+      const sanitizedInput = formData.nicOrPolicy.trim();
+      
+      const { data: byPolicy } = await supabase
         .from("policies")
         .select("*")
-        .or(`policy_number.eq.${formData.nicOrPolicy},holder_nic.eq.${formData.nicOrPolicy}`)
+        .eq("policy_number", sanitizedInput)
         .eq("is_active", true);
-
-      if (error) throw error;
+      
+      const { data: byNic } = await supabase
+        .from("policies")
+        .select("*")
+        .eq("holder_nic", sanitizedInput)
+        .eq("is_active", true);
+      
+      const data = [...(byPolicy || []), ...(byNic || [])];
       
       if (data && data.length > 0) {
         setPolicies(data);
@@ -109,7 +142,7 @@ const BranchPortal = () => {
         toast.error("No active policy found with this NIC/Policy number");
       }
     } catch (error) {
-      toast.error("Failed to verify policy");
+      toast.error("Unable to verify policy. Please try again.");
     }
     setIsLoading(false);
   };
@@ -167,24 +200,31 @@ const BranchPortal = () => {
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
 
   const handleSubmit = async () => {
+    // Validate claim amount before submission
+    const amountValidation = claimAmountSchema.safeParse(formData.claimAmount);
+    if (!amountValidation.success) {
+      toast.error(amountValidation.error.errors[0].message);
+      return;
+    }
+
     setIsLoading(true);
     setCurrentStep(4);
     setProcessingStatus("Creating claim...");
     setProcessingProgress(10);
 
     try {
-      // Create anonymous claim for branch (no user_id required for branch submissions)
+      // Create claim for branch submissions
       const claimData: any = {
         policy_number: selectedPolicy?.policy_number || formData.nicOrPolicy,
         claim_type: formData.claimType,
         relationship: selectedMember?.relationship || "self",
-        claim_amount: parseFloat(formData.claimAmount) || 0,
-        diagnosis: formData.diagnosis,
-        hospital_name: formData.hospitalName,
-        doctor_name: formData.doctorName,
-        mobile_number: formData.mobileNumber,
-        bank_name: formData.bankName,
-        account_number: formData.accountNumber,
+        claim_amount: parseFloat(formData.claimAmount),
+        diagnosis: formData.diagnosis?.substring(0, 500),
+        hospital_name: formData.hospitalName?.substring(0, 255),
+        doctor_name: formData.doctorName?.substring(0, 255),
+        mobile_number: formData.mobileNumber?.substring(0, 20),
+        bank_name: formData.bankName?.substring(0, 100),
+        account_number: formData.accountNumber?.substring(0, 50),
       };
 
       if (formData.policyId) claimData.policy_id = formData.policyId;
@@ -194,8 +234,6 @@ const BranchPortal = () => {
       if (formData.admissionDate) claimData.admission_date = formData.admissionDate;
       if (formData.dischargeDate) claimData.discharge_date = formData.dischargeDate;
 
-      // For branch, we need to create a system user or use service role
-      // For now, we'll skip user_id requirement in branch flow
       const { data: claim, error: claimError } = await supabase
         .from("claims")
         .insert(claimData)
@@ -203,8 +241,6 @@ const BranchPortal = () => {
         .single();
 
       if (claimError) {
-        console.error("Claim error:", claimError);
-        // If user_id is required, show appropriate message
         if (claimError.message.includes("user_id")) {
           toast.error("Branch submissions require authentication. Please use the Digital Portal.");
           setIsLoading(false);
@@ -260,7 +296,6 @@ const BranchPortal = () => {
       setProcessingStatus("Complete!");
       toast.success("Claim submitted successfully!");
     } catch (error) {
-      console.error("Submission error:", error);
       toast.error("Failed to submit claim. Please try again.");
     }
     setIsLoading(false);
