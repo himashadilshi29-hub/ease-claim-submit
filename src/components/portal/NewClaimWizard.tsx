@@ -212,7 +212,6 @@ const NewClaimWizard = ({ onComplete }: NewClaimWizardProps) => {
           .upload(fileName, doc.file);
 
         if (uploadError) {
-          console.error("Upload error:", uploadError);
           continue;
         }
 
@@ -248,7 +247,6 @@ const NewClaimWizard = ({ onComplete }: NewClaimWizardProps) => {
         });
 
       if (pipelineError) {
-        console.error("Pipeline error:", pipelineError);
         // Continue anyway - claim is created
       }
 
@@ -259,7 +257,6 @@ const NewClaimWizard = ({ onComplete }: NewClaimWizardProps) => {
 
       toast.success("Claim submitted successfully!");
     } catch (error) {
-      console.error("Submission error:", error);
       toast.error("Failed to submit claim. Please try again.");
       setIsLoading(false);
     }
