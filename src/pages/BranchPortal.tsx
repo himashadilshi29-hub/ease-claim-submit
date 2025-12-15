@@ -24,17 +24,18 @@ import { useLanguage, Language } from "@/lib/i18n";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useAuth } from "@/hooks/useAuth";
 
-// Input validation schemas
-const nicRegex = /^([0-9]{9}[vVxX]|[0-9]{12})$/;
-const policyRegex = /^POL-?[0-9]{4}-?[0-9]{3,6}$/i;
+// Input validation schemas - more flexible to match actual data
+const nicRegex = /^([0-9]{9}[vVxX]|[0-9]{10,12})$/;
+const policyRegex = /^POL-?[0-9\-]+$/i;
 
 const nicOrPolicySchema = z.string()
   .min(1, "NIC or Policy number is required")
   .max(50, "Input too long")
   .refine(
-    (val) => nicRegex.test(val) || policyRegex.test(val),
-    "Please enter a valid NIC (9 digits + V/X or 12 digits) or Policy number (e.g., POL-2024-001)"
+    (val) => nicRegex.test(val) || policyRegex.test(val) || val.length >= 9,
+    "Please enter a valid NIC or Policy number"
   );
 
 const claimAmountSchema = z.string()
@@ -69,6 +70,7 @@ interface UploadedDoc {
 const BranchPortal = () => {
   const navigate = useNavigate();
   const { t, setLanguage } = useLanguage();
+  const { user, loading: authLoading } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -213,8 +215,16 @@ const BranchPortal = () => {
     setProcessingProgress(10);
 
     try {
+      // Check if user is authenticated
+      if (!user?.id) {
+        toast.error("Please sign in to submit claims");
+        navigate("/auth");
+        return;
+      }
+
       // Create claim for branch submissions
       const claimData: any = {
+        user_id: user.id,
         policy_number: selectedPolicy?.policy_number || formData.nicOrPolicy,
         claim_type: formData.claimType,
         relationship: selectedMember?.relationship || "self",
