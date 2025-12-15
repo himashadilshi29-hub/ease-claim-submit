@@ -207,19 +207,21 @@ const AdminClaimReview = () => {
   };
 
   const getStatusBadge = (status: string) => {
-    const styles = {
+    const styles: Record<string, string> = {
       pending: "bg-amber-100 text-amber-700",
       approved: "bg-green-100 text-green-700",
       rejected: "bg-red-100 text-red-700",
+      "info-requested": "bg-blue-100 text-blue-700",
     };
-    const labels = {
-      pending: "Pending Review",
-      approved: "Approved",
-      rejected: "Rejected",
+    const labels: Record<string, string> = {
+      pending: t.pendingReview,
+      approved: t.approved,
+      rejected: t.rejected,
+      "info-requested": t.requestMoreInfo,
     };
     return (
-      <span className={cn("px-3 py-1 rounded-full text-xs font-medium", styles[status as keyof typeof styles])}>
-        {labels[status as keyof typeof labels]}
+      <span className={cn("px-3 py-1 rounded-full text-xs font-medium", styles[status] || styles.pending)}>
+        {labels[status] || labels.pending}
       </span>
     );
   };
@@ -244,7 +246,7 @@ const AdminClaimReview = () => {
               <p className="text-sm text-muted-foreground">Reference: {claimData.id}</p>
             </div>
           </div>
-          {getStatusBadge(claimData.status)}
+          {getStatusBadge(claimStatus)}
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -578,19 +580,34 @@ const AdminClaimReview = () => {
           <div className="space-y-6">
             {/* Quick Actions */}
             <div className="glass-card p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-4">{t.quickActions}</h2>
               <div className="space-y-3">
-                <Button variant="success" className="w-full">
+                <Button 
+                  variant="success" 
+                  className="w-full"
+                  onClick={handleApprove}
+                  disabled={actionTaken}
+                >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  Approve Claim
+                  {t.approveClaim}
                 </Button>
-                <Button variant="destructive" className="w-full">
+                <Button 
+                  variant="destructive" 
+                  className="w-full"
+                  onClick={handleReject}
+                  disabled={actionTaken}
+                >
                   <AlertTriangle className="w-4 h-4 mr-2" />
-                  Reject Claim
+                  {t.rejectClaim}
                 </Button>
-                <Button variant="outline" className="w-full border-amber-400 text-amber-600 hover:bg-amber-50">
+                <Button 
+                  variant="outline" 
+                  className="w-full border-amber-400 text-amber-600 hover:bg-amber-50"
+                  onClick={handleRequestInfo}
+                  disabled={actionTaken}
+                >
                   <Clock className="w-4 h-4 mr-2" />
-                  Request More Info
+                  {t.requestMoreInfo}
                 </Button>
               </div>
             </div>
