@@ -4,16 +4,16 @@ project_id = "ijegsjcetbcxuwfanesl"
 verify_jwt = false
 
 [functions.process-claim-document]
-verify_jwt = false
+verify_jwt = true
 
 [functions.validate-claim]
-verify_jwt = false
+verify_jwt = true
 
 [functions.detect-fraud]
-verify_jwt = false
+verify_jwt = true
 
 [functions.calculate-settlement]
-verify_jwt = false
+verify_jwt = true
 
 [functions.process-claim-pipeline]
-verify_jwt = false
+verify_jwt = true
