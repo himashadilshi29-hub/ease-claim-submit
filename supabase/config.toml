@@ -2,3 +2,18 @@ project_id = "ijegsjcetbcxuwfanesl"
 
 [functions.seed-demo-users]
 verify_jwt = false
+
+[functions.process-claim-document]
+verify_jwt = false
+
+[functions.validate-claim]
+verify_jwt = false
+
+[functions.detect-fraud]
+verify_jwt = false
+
+[functions.calculate-settlement]
+verify_jwt = false
+
+[functions.process-claim-pipeline]
+verify_jwt = false
