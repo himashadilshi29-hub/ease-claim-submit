@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, FileText, CheckCircle, Eye, Download, Clock, AlertTriangle, Building, Calendar, XCircle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, User, FileText, CheckCircle, Eye, Download, Clock, AlertTriangle, Building, Calendar, XCircle, CheckCircle2, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,239 +10,231 @@ import Navbar from "@/components/shared/Navbar";
 import { cn } from "@/lib/utils";
 import { translations, type Language } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+
+interface ClaimData {
+  id: string;
+  reference_number: string;
+  status: string;
+  processing_status: string;
+  claim_type: string;
+  claim_amount: number;
+  approved_amount: number;
+  settled_amount: number;
+  hospital_name: string;
+  diagnosis: string;
+  date_of_treatment: string;
+  admission_date: string;
+  discharge_date: string;
+  doctor_name: string;
+  risk_score: number;
+  fraud_flags: number;
+  ocr_confidence: number;
+  risk_level: string;
+  fraud_status: string;
+  ai_summary: string;
+  admin_notes: string;
+  rejection_reason: string;
+  policy_number: string;
+  mobile_number: string;
+  bank_name: string;
+  account_number: string;
+  created_at: string;
+  member_id: string;
+  policy_id: string;
+}
 
 const AdminClaimReview = () => {
   const navigate = useNavigate();
   const { claimId } = useParams();
   const [assessorNotes, setAssessorNotes] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
   const [language] = useState<Language>(() => {
     const stored = localStorage.getItem("selectedLanguage");
     return (stored as Language) || "en";
   });
-  const [claimStatus, setClaimStatus] = useState("pending");
-  const [actionTaken, setActionTaken] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const [claim, setClaim] = useState<ClaimData | null>(null);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [ocrResults, setOcrResults] = useState<any[]>([]);
+  const [validation, setValidation] = useState<any>(null);
+  const [fraudResult, setFraudResult] = useState<any>(null);
+  const [settlement, setSettlement] = useState<any>(null);
+  const [policy, setPolicy] = useState<any>(null);
+  const [member, setMember] = useState<any>(null);
   const { toast } = useToast();
   
   const t = translations[language];
 
-  const handleApprove = () => {
-    setClaimStatus("approved");
-    setActionTaken(true);
-    toast({
-      title: t.claimApprovedSuccess,
-      description: "The claim has been approved and the customer will be notified.",
-    });
+  useEffect(() => {
+    if (claimId) {
+      fetchClaimData();
+    }
+  }, [claimId]);
+
+  const fetchClaimData = async () => {
+    setLoading(true);
+    try {
+      // Fetch claim
+      const { data: claimData, error: claimError } = await supabase
+        .from("claims")
+        .select("*")
+        .eq("id", claimId)
+        .single();
+      
+      if (claimError) throw claimError;
+      setClaim(claimData);
+      setAssessorNotes(claimData.admin_notes || "");
+
+      // Fetch related data in parallel
+      const [docsRes, ocrRes, validationRes, fraudRes, settlementRes] = await Promise.all([
+        supabase.from("claim_documents").select("*").eq("claim_id", claimId),
+        supabase.from("claim_ocr_results").select("*").eq("claim_id", claimId),
+        supabase.from("claim_validations").select("*").eq("claim_id", claimId).order("created_at", { ascending: false }).limit(1),
+        supabase.from("fraud_detection_results").select("*").eq("claim_id", claimId).order("created_at", { ascending: false }).limit(1),
+        supabase.from("settlement_calculations").select("*").eq("claim_id", claimId).order("created_at", { ascending: false }).limit(1),
+      ]);
+
+      setDocuments(docsRes.data || []);
+      setOcrResults(ocrRes.data || []);
+      setValidation(validationRes.data?.[0] || null);
+      setFraudResult(fraudRes.data?.[0] || null);
+      setSettlement(settlementRes.data?.[0] || null);
+
+      // Fetch policy and member if available
+      if (claimData.policy_id) {
+        const { data: policyData } = await supabase
+          .from("policies")
+          .select("*")
+          .eq("id", claimData.policy_id)
+          .single();
+        setPolicy(policyData);
+      }
+
+      if (claimData.member_id) {
+        const { data: memberData } = await supabase
+          .from("policy_members")
+          .select("*")
+          .eq("id", claimData.member_id)
+          .single();
+        setMember(memberData);
+      }
+    } catch (error) {
+      console.error("Error fetching claim:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load claim data",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleReject = () => {
-    setClaimStatus("rejected");
-    setActionTaken(true);
-    toast({
-      title: t.claimRejectedSuccess,
-      description: "The claim has been rejected and the customer will be notified.",
-      variant: "destructive",
-    });
+  const handleApprove = async () => {
+    if (!claim) return;
+    setProcessing(true);
+    try {
+      const { error } = await supabase
+        .from("claims")
+        .update({
+          status: "approved",
+          processing_status: "settled",
+          admin_notes: assessorNotes,
+          approved_amount: settlement?.insurer_payment || claim.claim_amount,
+          settled_amount: settlement?.insurer_payment || claim.claim_amount,
+        })
+        .eq("id", claim.id);
+
+      if (error) throw error;
+
+      await supabase.from("claim_history").insert([{
+        claim_id: claim.id,
+        action: "Claim Approved",
+        previous_status: claim.status as any,
+        new_status: "approved" as any,
+        notes: assessorNotes,
+      }]);
+
+      toast({
+        title: t.claimApprovedSuccess,
+        description: "The claim has been approved and the customer will be notified.",
+      });
+      fetchClaimData();
+    } catch (error) {
+      console.error("Error approving claim:", error);
+      toast({ title: "Error", description: "Failed to approve claim", variant: "destructive" });
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  const handleRequestInfo = () => {
-    setClaimStatus("info-requested");
-    setActionTaken(true);
-    toast({
-      title: t.moreInfoRequested,
-      description: "A request for additional information has been sent to the customer.",
-    });
+  const handleReject = async () => {
+    if (!claim) return;
+    if (!rejectionReason.trim()) {
+      toast({ title: "Error", description: "Please provide a rejection reason", variant: "destructive" });
+      return;
+    }
+    setProcessing(true);
+    try {
+      const { error } = await supabase
+        .from("claims")
+        .update({
+          status: "rejected",
+          processing_status: "closed",
+          admin_notes: assessorNotes,
+          rejection_reason: rejectionReason,
+          approved_amount: 0,
+          settled_amount: 0,
+        })
+        .eq("id", claim.id);
+
+      if (error) throw error;
+
+      await supabase.from("claim_history").insert([{
+        claim_id: claim.id,
+        action: "Claim Rejected",
+        previous_status: claim.status as any,
+        new_status: "rejected" as any,
+        notes: rejectionReason,
+      }]);
+
+      toast({
+        title: t.claimRejectedSuccess,
+        description: "The claim has been rejected and the customer will be notified.",
+        variant: "destructive",
+      });
+      fetchClaimData();
+    } catch (error) {
+      console.error("Error rejecting claim:", error);
+      toast({ title: "Error", description: "Failed to reject claim", variant: "destructive" });
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  // Mock claim data - OPD focused
-  const claimData = {
-    id: claimId || "CR123455",
-    status: "pending",
-    patientName: "John Perera",
-    memberId: "123456789V",
-    policyNumber: "POL-2025-5678",
-    claimAmount: "LKR 125,000",
-    submittedDate: "2025-01-15 10:30 AM",
-    medicalProvider: "National Hospital",
-    diagnosis: "Appendectomy",
-    treatmentDuration: "3 days",
-  };
+  const handleRerunPipeline = async () => {
+    if (!claim) return;
+    setProcessing(true);
+    try {
+      const response = await supabase.functions.invoke("process-claim-pipeline", {
+        body: { claimId: claim.id },
+      });
 
-  const documentAnalysis = [
-    { 
-      name: "Claim Form", 
-      status: "verified", 
-      accuracy: 98,
-      checks: [
-        { text: "Document type classified correctly", passed: true },
-        { text: "Key fields extracted successfully", passed: true },
-        { text: "No duplicate detected", passed: true },
-      ]
-    },
-    { 
-      name: "Discharge Summary", 
-      status: "verified", 
-      accuracy: 97,
-      checks: [
-        { text: "Document type classified correctly", passed: true },
-        { text: "Key fields extracted successfully", passed: true },
-        { text: "No duplicate detected", passed: true },
-      ]
-    },
-    { 
-      name: "Hospital Bill", 
-      status: "verified", 
-      accuracy: 99,
-      checks: [
-        { text: "Document type classified correctly", passed: true },
-        { text: "Key fields extracted successfully", passed: true },
-        { text: "No duplicate detected", passed: true },
-      ]
-    },
-    { 
-      name: "Prescription", 
-      status: "verified", 
-      accuracy: 96,
-      checks: [
-        { text: "Document type classified correctly", passed: true },
-        { text: "Key fields extracted successfully", passed: true },
-        { text: "No duplicate detected", passed: true },
-      ]
-    },
-    { 
-      name: "Lab Reports", 
-      status: "verified", 
-      accuracy: 95,
-      checks: [
-        { text: "Document type classified correctly", passed: true },
-        { text: "Key fields extracted successfully", passed: true },
-        { text: "No duplicate detected", passed: true },
-      ]
-    },
-  ];
+      if (response.error) throw response.error;
 
-  const policyData = {
-    policyNumber: "POL-2025-5678",
-    policyStatus: "Active",
-    claimType: "OPD",
-    coverageType: "Family Health Plan",
-    annualLimit: "LKR 500,000",
-    previousClaimsTotal: "LKR 45,000",
-    remainingCoverage: "LKR 455,000",
-    currentClaimAmount: "LKR 125,000",
-    maxPayable: "LKR 125,000",
-    memberVerification: [
-      { text: "Member is covered under the policy", passed: true },
-      { text: "Relationship verified: Self", passed: true },
-      { text: "Policy is active and valid", passed: true },
-      { text: "Procedure is covered", passed: true },
-    ],
-    coveredItems: ["Appendectomy", "Room Charges", "Surgery Fee", "Anesthesia", "Lab Tests", "Medication"],
-  };
-
-  const fraudAnalysis = {
-    riskLevel: "Low Risk",
-    anomalyScore: 0.92,
-    fraudRiskScore: 0.8,
-    historicalComparison: [
-      { text: "Claim amount within normal range for procedure", passed: true },
-      { text: "Treatment duration is appropriate (3 days)", passed: true },
-      { text: "No duplicate claims detected", passed: true },
-      { text: "Normal claim frequency for this member", passed: true },
-    ],
-    riskIndicators: [
-      { label: "Claim Amount Deviation", status: "Within $", color: "green" },
-      { label: "Hospital Pattern", status: "Normal", color: "green" },
-      { label: "Doctor Pattern", status: "Normal", color: "green" },
-      { label: "Member History", status: "Clean", color: "green" },
-    ],
-    duplicateCheck: [
-      { text: "Hash based matching: No duplicates found", passed: true },
-      { text: "Content based matching: Pass", passed: true },
-      { text: "No previous claims for same procedure", passed: true },
-    ],
-    recommendation: "This claim shows no signs of fraud. All validations passed successfully. Recommended for auto approval based on high confidence score (92%).",
-  };
-
-  const matchingData = [
-    {
-      title: "Prescription vs Diagnosis",
-      percentage: 95,
-      status: "Valid",
-      description: "Prescribed medicines match diagnosed condition appropriately",
-      checks: [
-        { text: "Paracetamol appropriate for post surgery pain management", passed: true },
-        { text: "Antibiotics match surgical procedure requirements", passed: true },
-        { text: "All medicines are relevant to appendectomy recovery", passed: true },
-      ],
-    },
-    {
-      title: "Prescription vs Bill",
-      percentage: 93,
-      status: "Valid",
-      description: "Billed items match prescribed medicines and quantities",
-      checks: [
-        { text: "All billed medicines are in prescription", passed: true },
-        { text: "Quantities match prescribed dosages", passed: true },
-        { text: "No non-covered or cosmetic drugs detected", passed: true },
-      ],
-    },
-    {
-      title: "Diagnosis vs Treatments",
-      percentage: 90,
-      status: "Valid",
-      description: "Treatment procedures align with diagnosis",
-      checks: [
-        { text: "Surgery type matches diagnosis (Appendectomy)", passed: true },
-        { text: "Lab reports support diagnosis", passed: true },
-        { text: "Hospital stay duration is appropriate", passed: true },
-      ],
-    },
-    {
-      title: "Billing vs Policy Limits",
-      percentage: 94,
-      status: "Valid",
-      description: "Claim amount within policy coverage limits",
-      checks: [
-        { text: "Total claim amount within annual limit", passed: true },
-        { text: "Room charges within policy allowance", passed: true },
-        { text: "Surgery fees within coverage limits", passed: true },
-      ],
-    },
-  ];
-
-  const aiAnalysis = {
-    overallScore: 92,
-    documentsVerified: "5/5",
-    fraudRisk: "Low",
-    fraudRiskScore: "0.8%",
-    processingSteps: [
-      { title: "Document Verification Complete", description: "All required documents validated with 98% OCR accuracy", completed: true },
-      { title: "Policy Eligibility Confirmed", description: "Active policy with sufficient coverage for appendectomy", completed: true },
-      { title: "Amount Validation Passed", description: "Claim amount within expected range for procedure (3-day stay)", completed: true },
-      { title: "Duplicate Check", description: "No duplicate claims found in the system", completed: true },
-      { title: "Fraud Pattern Analysis", description: "No suspicious patterns detected", completed: true },
-    ],
-  };
-
-  const documents = [
-    { name: "Claim Form.pdf", type: "claim form", size: "245 KB" },
-    { name: "Discharge Summary.pdf", type: "discharge", size: "189 KB" },
-    { name: "Hospital Bill.pdf", type: "bill", size: "312 KB" },
-    { name: "Prescription.pdf", type: "prescription", size: "156 KB" },
-    { name: "Lab Reports.pdf", type: "reports", size: "423 KB" },
-  ];
-
-  const handleDownload = (fileName: string) => {
-    const content = `This is a mock PDF content for ${fileName}`;
-    const blob = new Blob([content], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      toast({
+        title: "Pipeline Complete",
+        description: `Decision: ${response.data?.pipeline_results?.decision || "Complete"}`,
+      });
+      fetchClaimData();
+    } catch (error) {
+      console.error("Error running pipeline:", error);
+      toast({ title: "Error", description: "Failed to run AI pipeline", variant: "destructive" });
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -250,24 +242,41 @@ const AdminClaimReview = () => {
       pending: "bg-amber-100 text-amber-700",
       approved: "bg-green-100 text-green-700",
       rejected: "bg-red-100 text-red-700",
-      "info-requested": "bg-blue-100 text-blue-700",
-    };
-    const labels: Record<string, string> = {
-      pending: t.pendingReview,
-      approved: t.approved,
-      rejected: t.rejected,
-      "info-requested": t.requestMoreInfo,
+      processing: "bg-blue-100 text-blue-700",
     };
     return (
       <span className={cn("px-3 py-1 rounded-full text-xs font-medium", styles[status] || styles.pending)}>
-        {labels[status] || labels.pending}
+        {status?.charAt(0).toUpperCase() + status?.slice(1) || "Pending"}
       </span>
     );
   };
 
-  const getDocStatusColor = (status: string) => {
-    return status === "verified" ? "bg-green-500" : "bg-red-500";
-  };
+  const formatCurrency = (amount: number) => `LKR ${(amount || 0).toLocaleString()}`;
+  const formatDate = (date: string) => date ? new Date(date).toLocaleDateString() : "-";
+  const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!claim) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold mb-2">Claim Not Found</h2>
+          <Button onClick={() => navigate("/admin")}>Back to Dashboard</Button>
+        </div>
+      </div>
+    );
+  }
+
+  const overallScore = validation?.overall_validation_score || 0;
+  const fraudScore = fraudResult?.fraud_score || 0;
+  const anomalyScore = fraudResult?.anomaly_score || 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -282,10 +291,13 @@ const AdminClaimReview = () => {
             </Button>
             <div>
               <h1 className="text-2xl font-bold text-foreground">Claim Review</h1>
-              <p className="text-sm text-muted-foreground">Reference: {claimData.id}</p>
+              <p className="text-sm text-muted-foreground">Reference: {claim.reference_number}</p>
             </div>
           </div>
-          {getStatusBadge(claimStatus)}
+          <div className="flex items-center gap-2">
+            {getStatusBadge(claim.status)}
+            <Badge variant="outline">{claim.processing_status}</Badge>
+          </div>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -298,59 +310,57 @@ const AdminClaimReview = () => {
                 <div className="flex items-start gap-3">
                   <User className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Patient Name</p>
-                    <p className="font-medium text-primary">{claimData.patientName}</p>
-                    <p className="text-xs text-muted-foreground">{claimData.memberId}</p>
+                    <p className="text-xs text-muted-foreground">Patient</p>
+                    <p className="font-medium text-primary">{member?.member_name || "N/A"}</p>
+                    <p className="text-xs text-muted-foreground">{member?.member_nic || claim.mobile_number}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-xs text-muted-foreground">Policy Number</p>
-                    <p className="font-medium text-primary">{claimData.policyNumber}</p>
+                    <p className="font-medium text-primary">{claim.policy_number}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Calendar className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
                     <p className="text-xs text-muted-foreground">Submitted</p>
-                    <p className="font-medium text-foreground">{claimData.submittedDate}</p>
+                    <p className="font-medium text-foreground">{formatDate(claim.created_at)}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <span className="text-muted-foreground font-bold text-sm">$</span>
                   <div>
                     <p className="text-xs text-muted-foreground">Claim Amount</p>
-                    <p className="font-bold text-primary text-lg">{claimData.claimAmount}</p>
+                    <p className="font-bold text-primary text-lg">{formatCurrency(claim.claim_amount)}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Building className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Medical Provider</p>
-                    <p className="font-medium text-primary">{claimData.medicalProvider}</p>
+                    <p className="text-xs text-muted-foreground">Hospital</p>
+                    <p className="font-medium text-primary">{claim.hospital_name || "N/A"}</p>
                   </div>
                 </div>
-                <div className="col-span-1">
-                  <div className="flex gap-6">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Diagnosis</p>
-                      <p className="font-medium text-foreground">{claimData.diagnosis}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Treatment Duration</p>
-                      <p className="font-medium text-foreground">{claimData.treatmentDuration}</p>
-                    </div>
-                  </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Diagnosis</p>
+                  <p className="font-medium text-foreground">{claim.diagnosis || "N/A"}</p>
                 </div>
               </div>
             </div>
 
             {/* AI Analysis & Verification */}
             <div className="glass-card p-6">
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold text-foreground">AI Analysis & Verification</h2>
-                <p className="text-xs text-muted-foreground">Automated checks and validations performed by the AI system</p>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">AI Analysis & Verification</h2>
+                  <p className="text-xs text-muted-foreground">Automated checks performed by the AI system</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleRerunPipeline} disabled={processing}>
+                  <RefreshCw className={cn("w-4 h-4 mr-2", processing && "animate-spin")} />
+                  Re-run AI
+                </Button>
               </div>
 
               <Tabs defaultValue="overview" className="w-full">
@@ -363,241 +373,242 @@ const AdminClaimReview = () => {
                 </TabsList>
 
                 <TabsContent value="overview" className="space-y-6">
-                  {/* Score Cards */}
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-green-50 rounded-xl p-4">
+                    <div className={cn("rounded-xl p-4", overallScore >= 0.7 ? "bg-green-50" : overallScore >= 0.5 ? "bg-amber-50" : "bg-red-50")}>
                       <div className="flex items-center gap-2 mb-1">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span className="text-xs text-muted-foreground">Overall Score</span>
+                        <CheckCircle className={cn("w-4 h-4", overallScore >= 0.7 ? "text-green-600" : overallScore >= 0.5 ? "text-amber-600" : "text-red-600")} />
+                        <span className="text-xs text-muted-foreground">Validation Score</span>
                       </div>
-                      <p className="text-3xl font-bold text-green-600">{aiAnalysis.overallScore}%</p>
-                      <p className="text-xs text-muted-foreground">High Confidence</p>
+                      <p className={cn("text-3xl font-bold", overallScore >= 0.7 ? "text-green-600" : overallScore >= 0.5 ? "text-amber-600" : "text-red-600")}>
+                        {formatPercent(overallScore)}
+                      </p>
                     </div>
-                    <div className="bg-green-50 rounded-xl p-4">
+                    <div className={cn("rounded-xl p-4", anomalyScore >= 0.7 ? "bg-green-50" : "bg-amber-50")}>
                       <div className="flex items-center gap-2 mb-1">
                         <FileText className="w-4 h-4 text-green-600" />
-                        <span className="text-xs text-muted-foreground">Documents</span>
+                        <span className="text-xs text-muted-foreground">Anomaly Score</span>
                       </div>
-                      <p className="text-3xl font-bold text-green-600">{aiAnalysis.documentsVerified}</p>
-                      <p className="text-xs text-muted-foreground">All Verified</p>
+                      <p className="text-3xl font-bold text-green-600">{formatPercent(anomalyScore)}</p>
                     </div>
-                    <div className="bg-green-50 rounded-xl p-4">
+                    <div className={cn("rounded-xl p-4", fraudScore < 0.3 ? "bg-green-50" : fraudScore < 0.6 ? "bg-amber-50" : "bg-red-50")}>
                       <div className="flex items-center gap-2 mb-1">
-                        <AlertTriangle className="w-4 h-4 text-green-600" />
-                        <span className="text-xs text-muted-foreground">Fraud Risk</span>
+                        <AlertTriangle className={cn("w-4 h-4", fraudScore < 0.3 ? "text-green-600" : fraudScore < 0.6 ? "text-amber-600" : "text-red-600")} />
+                        <span className="text-xs text-muted-foreground">Fraud Score</span>
                       </div>
-                      <p className="text-3xl font-bold text-green-600">{aiAnalysis.fraudRisk}</p>
-                      <p className="text-xs text-muted-foreground">{aiAnalysis.fraudRiskScore} Risk Score</p>
+                      <p className={cn("text-3xl font-bold", fraudScore < 0.3 ? "text-green-600" : fraudScore < 0.6 ? "text-amber-600" : "text-red-600")}>
+                        {formatPercent(fraudScore)}
+                      </p>
                     </div>
                   </div>
 
-                  {/* AI Processing Summary */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground mb-3">AI Processing Summary</h3>
-                    <div className="space-y-3">
-                      {aiAnalysis.processingSteps.map((step, i) => (
-                        <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
-                          <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                          <div>
-                            <p className="font-medium text-foreground text-sm">{step.title}</p>
-                            <p className="text-xs text-muted-foreground">{step.description}</p>
-                          </div>
-                        </div>
-                      ))}
+                  {claim.ai_summary && (
+                    <div className="bg-muted/30 rounded-lg p-4">
+                      <h3 className="text-sm font-semibold text-foreground mb-2">AI Summary</h3>
+                      <p className="text-sm text-muted-foreground">{claim.ai_summary}</p>
                     </div>
-                  </div>
+                  )}
+
+                  {settlement && (
+                    <div className="bg-primary/5 rounded-lg p-4">
+                      <h3 className="text-sm font-semibold text-foreground mb-3">Settlement Calculation</h3>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Decision</span>
+                          <Badge variant={settlement.decision === "auto_approve" ? "default" : "secondary"}>
+                            {settlement.decision}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Max Payable</span>
+                          <span className="font-medium">{formatCurrency(settlement.max_payable_amount)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Co-Payment</span>
+                          <span className="font-medium">{formatCurrency(settlement.co_payment_amount)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Insurer Payment</span>
+                          <span className="font-bold text-primary">{formatCurrency(settlement.insurer_payment)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="documents" className="space-y-4">
-                  {documentAnalysis.map((doc, i) => (
-                    <div key={i} className="border-l-4 border-l-amber-400 rounded-lg bg-muted/20 p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-amber-600" />
-                          <span className="font-semibold text-amber-600">{doc.name}</span>
-                        </div>
-                        <Badge className={cn("text-white", getDocStatusColor(doc.status))}>
-                          {doc.status === "verified" ? "Verified" : "Failed"}
-                        </Badge>
-                      </div>
-                      <div className="mb-3">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-muted-foreground">OCR Accuracy</span>
-                          <span className="font-medium">{doc.accuracy}%</span>
-                        </div>
-                        <Progress value={doc.accuracy} className="h-2" />
-                      </div>
-                      <div className="space-y-1">
-                        {doc.checks.map((check, j) => (
-                          <div key={j} className="flex items-center gap-2 text-xs">
-                            <CheckCircle2 className="w-3 h-3 text-green-600" />
-                            <span className="text-muted-foreground">{check.text}</span>
+                  {ocrResults.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8">No OCR results available</p>
+                  ) : (
+                    ocrResults.map((ocr, i) => (
+                      <div key={i} className="border-l-4 border-l-amber-400 rounded-lg bg-muted/20 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-amber-600" />
+                            <span className="font-semibold text-amber-600">{ocr.document_type || "Document"}</span>
                           </div>
-                        ))}
+                          <Badge className={cn("text-white", ocr.ocr_confidence >= 90 ? "bg-green-500" : ocr.ocr_confidence >= 50 ? "bg-amber-500" : "bg-red-500")}>
+                            {ocr.status}
+                          </Badge>
+                        </div>
+                        <div className="mb-3">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-muted-foreground">OCR Confidence</span>
+                            <span className="font-medium">{ocr.ocr_confidence}%</span>
+                          </div>
+                          <Progress value={ocr.ocr_confidence} className="h-2" />
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          <p>Language: {ocr.language_detected || "Unknown"}</p>
+                          <p>Handwritten: {ocr.is_handwritten ? "Yes" : "No"}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </TabsContent>
 
                 <TabsContent value="policy" className="space-y-6">
                   <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
                     <div className="flex items-center gap-2 mb-4">
                       <CheckCircle className="w-5 h-5 text-green-600" />
-                      <h3 className="font-semibold text-foreground">Policy Verification Status</h3>
+                      <h3 className="font-semibold text-foreground">Policy Verification</h3>
                     </div>
                     
-                    <div className="grid md:grid-cols-2 gap-4 mb-6">
-                      <div>
-                        <p className="text-xs text-amber-600">Policy Number</p>
-                        <p className="font-medium text-amber-600">{policyData.policyNumber}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Policy Status</p>
-                        <Badge className="bg-green-500 text-white">{policyData.policyStatus}</Badge>
-                      </div>
-                      <div>
-                        <p className="text-xs text-amber-600">Claim Type</p>
-                        <p className="font-medium text-amber-600">{policyData.claimType}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Coverage Type</p>
-                        <p className="font-medium text-primary">{policyData.coverageType}</p>
-                      </div>
-                    </div>
-
-                    <h4 className="font-semibold text-foreground mb-3">Coverage Details</h4>
-                    <div className="space-y-2 mb-6">
-                      <div className="flex justify-between">
-                        <span className="text-xs text-amber-600">Annual Limit</span>
-                        <span className="font-medium">{policyData.annualLimit}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-xs text-amber-600">Previous Claims Total</span>
-                        <span className="font-medium">{policyData.previousClaimsTotal}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-xs text-amber-600">Remaining Coverage</span>
-                        <span className="font-medium text-green-600">{policyData.remainingCoverage}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-xs text-amber-600">Current Claim Amount</span>
-                        <span className="font-medium">{policyData.currentClaimAmount}</span>
-                      </div>
-                      <div className="flex justify-between border-t pt-2">
-                        <span className="text-sm font-semibold">Max Payable</span>
-                        <span className="font-bold text-primary">{policyData.maxPayable}</span>
-                      </div>
-                    </div>
-
-                    <h4 className="font-semibold text-foreground mb-3">Member Verification</h4>
-                    <div className="space-y-2 mb-6">
-                      {policyData.memberVerification.map((item, i) => (
-                        <div key={i} className="flex items-center gap-2 text-sm">
-                          <CheckCircle2 className="w-4 h-4 text-green-600" />
-                          <span className="text-muted-foreground">{item.text}</span>
+                    {policy ? (
+                      <>
+                        <div className="grid md:grid-cols-2 gap-4 mb-6">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Policy Number</p>
+                            <p className="font-medium text-primary">{policy.policy_number}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Policy Type</p>
+                            <Badge>{policy.policy_type}</Badge>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Hospitalization Limit</p>
+                            <p className="font-medium">{formatCurrency(policy.hospitalization_limit)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">OPD Limit</p>
+                            <p className="font-medium">{formatCurrency(policy.opd_limit)}</p>
+                          </div>
                         </div>
-                      ))}
-                    </div>
 
-                    <h4 className="font-semibold text-foreground mb-3">Covered Items</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {policyData.coveredItems.map((item, i) => (
-                        <Badge key={i} variant="outline" className="border-amber-400 text-amber-600">
-                          {item}
-                        </Badge>
-                      ))}
-                    </div>
+                        {validation && (
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <span className="text-xs text-muted-foreground">Previous Claims Total</span>
+                              <span className="font-medium">{formatCurrency(validation.previous_claims_total)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-xs text-muted-foreground">Remaining Coverage</span>
+                              <span className="font-medium text-green-600">{formatCurrency(validation.remaining_coverage)}</span>
+                            </div>
+                            <div className="flex justify-between border-t pt-2">
+                              <span className="text-sm font-semibold">Max Payable</span>
+                              <span className="font-bold text-primary">{formatCurrency(validation.max_payable_amount)}</span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-muted-foreground">Policy data not available</p>
+                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="fraud" className="space-y-6">
-                  <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                  <div className={cn("border-l-4 rounded-lg bg-muted/20 p-4", fraudScore < 0.3 ? "border-l-green-500" : fraudScore < 0.6 ? "border-l-amber-500" : "border-l-red-500")}>
                     <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                        <h3 className="font-semibold text-foreground">Fraud Analysis Report</h3>
-                      </div>
-                      <Badge className="bg-green-500 text-white">{fraudAnalysis.riskLevel}</Badge>
+                      <h3 className="font-semibold text-foreground">Fraud Analysis</h3>
+                      <Badge className={cn("text-white", fraudScore < 0.3 ? "bg-green-500" : fraudScore < 0.6 ? "bg-amber-500" : "bg-red-500")}>
+                        {claim.risk_level} Risk
+                      </Badge>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-4 mb-6">
-                      <div className="bg-green-50 rounded-lg p-4">
-                        <p className="text-xs text-amber-600">Anomaly Score</p>
-                        <p className="text-3xl font-bold text-green-600">{fraudAnalysis.anomalyScore}</p>
-                        <p className="text-xs text-muted-foreground">High confidence</p>
-                      </div>
-                      <div className="bg-green-50 rounded-lg p-4">
-                        <p className="text-xs text-amber-600">Fraud Risk Score</p>
-                        <p className="text-3xl font-bold text-green-600">{fraudAnalysis.fraudRiskScore}</p>
-                        <p className="text-xs text-muted-foreground">Very low risk</p>
-                      </div>
-                    </div>
-
-                    <h4 className="font-semibold text-amber-600 mb-3">Historical Comparison</h4>
-                    <div className="space-y-2 mb-6">
-                      {fraudAnalysis.historicalComparison.map((item, i) => (
-                        <div key={i} className="flex items-center gap-2 text-sm">
-                          <CheckCircle2 className="w-4 h-4 text-green-600" />
-                          <span className="text-muted-foreground">{item.text}</span>
+                    {fraudResult ? (
+                      <>
+                        <div className="grid md:grid-cols-2 gap-4 mb-6">
+                          <div className={cn("rounded-lg p-4", anomalyScore >= 0.7 ? "bg-green-50" : "bg-amber-50")}>
+                            <p className="text-xs text-muted-foreground">Anomaly Score</p>
+                            <p className="text-3xl font-bold text-green-600">{formatPercent(anomalyScore)}</p>
+                          </div>
+                          <div className={cn("rounded-lg p-4", fraudScore < 0.3 ? "bg-green-50" : "bg-red-50")}>
+                            <p className="text-xs text-muted-foreground">Fraud Score</p>
+                            <p className={cn("text-3xl font-bold", fraudScore < 0.3 ? "text-green-600" : "text-red-600")}>
+                              {formatPercent(fraudScore)}
+                            </p>
+                          </div>
                         </div>
-                      ))}
-                    </div>
 
-                    <h4 className="font-semibold text-foreground mb-3">Risk Indicators</h4>
-                    <div className="grid md:grid-cols-2 gap-3 mb-6">
-                      {fraudAnalysis.riskIndicators.map((indicator, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <span className="text-xs text-amber-600">{indicator.label}</span>
-                          <Badge className={cn("text-white", indicator.color === "green" ? "bg-green-500" : "bg-red-500")}>
-                            {indicator.status}
+                        {fraudResult.alerts && fraudResult.alerts.length > 0 && (
+                          <div className="mb-4">
+                            <h4 className="font-semibold text-foreground mb-2">Alerts</h4>
+                            <div className="space-y-2">
+                              {fraudResult.alerts.map((alert: string, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-sm">
+                                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                                  <span className="text-muted-foreground">{alert}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">Duplicate Check:</span>
+                          <Badge variant={fraudResult.duplicate_hash_match ? "destructive" : "secondary"}>
+                            {fraudResult.duplicate_hash_match ? "Duplicate Found" : "No Duplicates"}
                           </Badge>
                         </div>
-                      ))}
-                    </div>
 
-                    <h4 className="font-semibold text-foreground mb-3">Duplicate Check</h4>
-                    <div className="space-y-2 mb-6">
-                      {fraudAnalysis.duplicateCheck.map((item, i) => (
-                        <div key={i} className="flex items-center gap-2 text-sm">
-                          <CheckCircle2 className="w-4 h-4 text-green-600" />
-                          <span className="text-muted-foreground">{item.text}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="bg-green-50 border-l-4 border-l-green-500 rounded-lg p-4">
-                      <h4 className="font-semibold text-green-700 mb-2">AI Recommendation</h4>
-                      <p className="text-sm text-green-700">{fraudAnalysis.recommendation}</p>
-                    </div>
+                        {fraudResult.llm_analysis && (
+                          <div className="mt-4 bg-muted/30 rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground">{fraudResult.llm_analysis}</p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-muted-foreground">Fraud analysis not available</p>
+                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="matching" className="space-y-4">
-                  <h3 className="font-semibold text-foreground mb-4">Document Cross-Validation Report</h3>
-                  {matchingData.map((match, i) => (
-                    <div key={i} className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-amber-600">{match.title}</span>
-                          <Badge variant="outline" className="text-xs border-green-500 text-green-600">{Math.round(match.percentage * 0.9 + 10)}%</Badge>
+                  {validation ? (
+                    <>
+                      <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-foreground">Prescription vs Diagnosis</span>
+                          <Badge className="bg-green-500 text-white">{formatPercent(validation.prescription_diagnosis_score)}</Badge>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-foreground">{match.percentage}%</span>
-                          <Badge className="bg-green-500 text-white">{match.status}</Badge>
+                        <Progress value={(validation.prescription_diagnosis_score || 0) * 100} className="h-2" />
+                      </div>
+                      <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-foreground">Prescription vs Bill</span>
+                          <Badge className="bg-green-500 text-white">{formatPercent(validation.prescription_bill_score)}</Badge>
                         </div>
+                        <Progress value={(validation.prescription_bill_score || 0) * 100} className="h-2" />
                       </div>
-                      <p className="text-xs text-muted-foreground mb-3">{match.description}</p>
-                      <Progress value={match.percentage} className="h-2 mb-3" />
-                      <div className="space-y-1">
-                        {match.checks.map((check, j) => (
-                          <div key={j} className="flex items-center gap-2 text-xs">
-                            <CheckCircle2 className="w-3 h-3 text-green-600" />
-                            <span className="text-muted-foreground">{check.text}</span>
-                          </div>
-                        ))}
+                      <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-foreground">Diagnosis vs Treatment</span>
+                          <Badge className="bg-green-500 text-white">{formatPercent(validation.diagnosis_treatment_score)}</Badge>
+                        </div>
+                        <Progress value={(validation.diagnosis_treatment_score || 0) * 100} className="h-2" />
                       </div>
-                    </div>
-                  ))}
+                      <div className="border-l-4 border-l-green-500 rounded-lg bg-muted/20 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-foreground">Billing vs Policy</span>
+                          <Badge className="bg-green-500 text-white">{formatPercent(validation.billing_policy_score)}</Badge>
+                        </div>
+                        <Progress value={(validation.billing_policy_score || 0) * 100} className="h-2" />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No validation data available</p>
+                  )}
                 </TabsContent>
               </Tabs>
             </div>
@@ -610,8 +621,20 @@ const AdminClaimReview = () => {
                 placeholder="Enter your assessment notes here..."
                 value={assessorNotes}
                 onChange={(e) => setAssessorNotes(e.target.value)}
-                className="min-h-[120px]"
+                className="min-h-[100px] mb-4"
               />
+              
+              {claim.status === "pending" && (
+                <>
+                  <h3 className="text-sm font-semibold text-foreground mb-2">Rejection Reason (if rejecting)</h3>
+                  <Textarea
+                    placeholder="Enter rejection reason..."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    className="min-h-[80px]"
+                  />
+                </>
+              )}
             </div>
           </div>
 
@@ -625,28 +648,19 @@ const AdminClaimReview = () => {
                   variant="success" 
                   className="w-full"
                   onClick={handleApprove}
-                  disabled={actionTaken}
+                  disabled={processing || claim.status !== "pending"}
                 >
-                  <CheckCircle className="w-4 h-4 mr-2" />
+                  {processing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
                   {t.approveClaim}
                 </Button>
                 <Button 
                   variant="destructive" 
                   className="w-full"
                   onClick={handleReject}
-                  disabled={actionTaken}
+                  disabled={processing || claim.status !== "pending"}
                 >
-                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  {processing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
                   {t.rejectClaim}
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full border-amber-400 text-amber-600 hover:bg-amber-50"
-                  onClick={handleRequestInfo}
-                  disabled={actionTaken}
-                >
-                  <Clock className="w-4 h-4 mr-2" />
-                  {t.requestMoreInfo}
                 </Button>
               </div>
             </div>
@@ -665,27 +679,51 @@ const AdminClaimReview = () => {
                         <FileText className="w-4 h-4 text-red-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-primary">{doc.name}</p>
-                        <p className="text-xs text-muted-foreground">{doc.type}</p>
+                        <p className="text-sm font-medium text-primary">{doc.file_name}</p>
+                        <p className="text-xs text-muted-foreground">{doc.file_type}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {doc.ocr_confidence && (
+                        <Badge variant="outline" className="text-xs">{doc.ocr_confidence}%</Badge>
+                      )}
                       <Button variant="ghost" size="icon" className="h-8 w-8">
                         <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8"
-                        onClick={() => handleDownload(doc.name)}
-                      >
-                        <Download className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* Settlement Summary */}
+            {settlement && (
+              <div className="glass-card p-6">
+                <h2 className="text-lg font-semibold text-foreground mb-4">Settlement Summary</h2>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Claimed Amount</span>
+                    <span className="font-medium">{formatCurrency(claim.claim_amount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Max Payable</span>
+                    <span className="font-medium">{formatCurrency(settlement.max_payable_amount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Deductible</span>
+                    <span className="font-medium">-{formatCurrency(settlement.deductible_amount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Co-Payment</span>
+                    <span className="font-medium">-{formatCurrency(settlement.co_payment_amount)}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2">
+                    <span className="text-sm font-semibold">Insurer Payment</span>
+                    <span className="font-bold text-primary">{formatCurrency(settlement.insurer_payment)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
