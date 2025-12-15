@@ -14,6 +14,172 @@ export type Database = {
   }
   public: {
     Tables: {
+      claim_documents: {
+        Row: {
+          claim_id: string
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id: string
+          ocr_confidence: number | null
+          ocr_extracted_text: string | null
+        }
+        Insert: {
+          claim_id: string
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id?: string
+          ocr_confidence?: number | null
+          ocr_extracted_text?: string | null
+        }
+        Update: {
+          claim_id?: string
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          ocr_confidence?: number | null
+          ocr_extracted_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "claim_documents_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "claims"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      claim_history: {
+        Row: {
+          action: string
+          claim_id: string
+          created_at: string
+          id: string
+          new_status: Database["public"]["Enums"]["claim_status"] | null
+          notes: string | null
+          performed_by: string | null
+          previous_status: Database["public"]["Enums"]["claim_status"] | null
+        }
+        Insert: {
+          action: string
+          claim_id: string
+          created_at?: string
+          id?: string
+          new_status?: Database["public"]["Enums"]["claim_status"] | null
+          notes?: string | null
+          performed_by?: string | null
+          previous_status?: Database["public"]["Enums"]["claim_status"] | null
+        }
+        Update: {
+          action?: string
+          claim_id?: string
+          created_at?: string
+          id?: string
+          new_status?: Database["public"]["Enums"]["claim_status"] | null
+          notes?: string | null
+          performed_by?: string | null
+          previous_status?: Database["public"]["Enums"]["claim_status"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "claim_history_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "claims"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      claims: {
+        Row: {
+          account_number: string | null
+          admin_notes: string | null
+          bank_name: string | null
+          claim_amount: number
+          claim_type: Database["public"]["Enums"]["claim_type"]
+          created_at: string
+          date_of_treatment: string | null
+          diagnosis: string | null
+          fraud_flags: number | null
+          fraud_status: string | null
+          id: string
+          mobile_number: string | null
+          ocr_confidence: number | null
+          ocr_level: string | null
+          policy_number: string
+          processed_at: string | null
+          reference_number: string
+          rejection_reason: string | null
+          relationship: Database["public"]["Enums"]["relationship_type"]
+          risk_level: string | null
+          risk_score: number | null
+          status: Database["public"]["Enums"]["claim_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_number?: string | null
+          admin_notes?: string | null
+          bank_name?: string | null
+          claim_amount: number
+          claim_type: Database["public"]["Enums"]["claim_type"]
+          created_at?: string
+          date_of_treatment?: string | null
+          diagnosis?: string | null
+          fraud_flags?: number | null
+          fraud_status?: string | null
+          id?: string
+          mobile_number?: string | null
+          ocr_confidence?: number | null
+          ocr_level?: string | null
+          policy_number: string
+          processed_at?: string | null
+          reference_number: string
+          rejection_reason?: string | null
+          relationship: Database["public"]["Enums"]["relationship_type"]
+          risk_level?: string | null
+          risk_score?: number | null
+          status?: Database["public"]["Enums"]["claim_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_number?: string | null
+          admin_notes?: string | null
+          bank_name?: string | null
+          claim_amount?: number
+          claim_type?: Database["public"]["Enums"]["claim_type"]
+          created_at?: string
+          date_of_treatment?: string | null
+          diagnosis?: string | null
+          fraud_flags?: number | null
+          fraud_status?: string | null
+          id?: string
+          mobile_number?: string | null
+          ocr_confidence?: number | null
+          ocr_level?: string | null
+          policy_number?: string
+          processed_at?: string | null
+          reference_number?: string
+          rejection_reason?: string | null
+          relationship?: Database["public"]["Enums"]["relationship_type"]
+          risk_level?: string | null
+          risk_score?: number | null
+          status?: Database["public"]["Enums"]["claim_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -83,6 +249,14 @@ export type Database = {
       }
     }
     Enums: {
+      claim_status:
+        | "pending"
+        | "processing"
+        | "approved"
+        | "rejected"
+        | "manual-review"
+      claim_type: "opd" | "spectacles" | "dental"
+      relationship_type: "self" | "spouse" | "child" | "parent"
       user_portal: "admin" | "branch" | "customer"
     }
     CompositeTypes: {
@@ -211,6 +385,15 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      claim_status: [
+        "pending",
+        "processing",
+        "approved",
+        "rejected",
+        "manual-review",
+      ],
+      claim_type: ["opd", "spectacles", "dental"],
+      relationship_type: ["self", "spouse", "child", "parent"],
       user_portal: ["admin", "branch", "customer"],
     },
   },
