@@ -1,14 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { LogIn, UserPlus, Shield, Building, User } from "lucide-react";
+import { Shield, Building, User, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import Navbar from "@/components/shared/Navbar";
 import LanguageSelector from "@/components/shared/LanguageSelector";
-import Logo from "@/components/shared/Logo";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -17,40 +14,28 @@ import { z } from "zod";
 type PortalType = "admin" | "branch" | "customer";
 
 const loginSchema = z.object({
-  email: z.string().email("Invalid email address").max(255),
-  password: z.string().min(6, "Password must be at least 6 characters").max(100),
+  username: z.string().min(1, "Username is required").max(255),
+  password: z.string().min(1, "Password is required").max(100),
 });
 
-const signupSchema = z.object({
-  fullName: z.string().min(2, "Name must be at least 2 characters").max(100),
-  email: z.string().email("Invalid email address").max(255),
-  password: z.string().min(6, "Password must be at least 6 characters").max(100),
-  nic: z.string().optional(),
-});
+// Demo credentials mapping
+const DEMO_CREDENTIALS: Record<string, { password: string; portal: PortalType; email: string }> = {
+  customer: { password: "customer123", portal: "customer", email: "customer@demo.com" },
+  staff: { password: "staff123", portal: "branch", email: "staff@demo.com" },
+  admin: { password: "admin123", portal: "admin", email: "admin@demo.com" },
+};
 
 const AuthPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const portalParam = searchParams.get("portal") as PortalType | null;
-  const portal: PortalType = portalParam && ["admin", "branch", "customer"].includes(portalParam) 
-    ? portalParam 
-    : "customer";
 
   const { t } = useLanguage();
-  const { signIn, signUp, user, portal: userPortal, loading } = useAuth();
+  const { signIn, user, portal: userPortal, loading } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"login" | "signup">("login");
-
-  // Login form
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-
-  // Signup form
-  const [signupFullName, setSignupFullName] = useState("");
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
-  const [signupNic, setSignupNic] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   // Redirect if already logged in
   useEffect(() => {
@@ -77,7 +62,7 @@ const AuthPage = () => {
     e.preventDefault();
 
     try {
-      loginSchema.parse({ email: loginEmail, password: loginPassword });
+      loginSchema.parse({ username, password });
     } catch (err) {
       if (err instanceof z.ZodError) {
         toast.error(err.errors[0].message);
@@ -85,13 +70,31 @@ const AuthPage = () => {
       }
     }
 
+    // Check if it's a demo credential
+    const demoUser = DEMO_CREDENTIALS[username.toLowerCase()];
+    if (demoUser && password === demoUser.password) {
+      setIsLoading(true);
+      const { error } = await signIn(demoUser.email, demoUser.password);
+      setIsLoading(false);
+
+      if (error) {
+        // If demo user doesn't exist, create it first
+        toast.error("Demo user not configured. Please contact administrator.");
+        return;
+      }
+
+      toast.success(t.authLoginSuccess || "Login successful!");
+      return;
+    }
+
+    // Regular email login
     setIsLoading(true);
-    const { error } = await signIn(loginEmail, loginPassword);
+    const { error } = await signIn(username, password);
     setIsLoading(false);
 
     if (error) {
       if (error.message.includes("Invalid login credentials")) {
-        toast.error(t.authInvalidCredentials || "Invalid email or password");
+        toast.error(t.authInvalidCredentials || "Invalid username or password");
       } else {
         toast.error(error.message);
       }
@@ -100,71 +103,6 @@ const AuthPage = () => {
 
     toast.success(t.authLoginSuccess || "Login successful!");
   };
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      signupSchema.parse({
-        fullName: signupFullName,
-        email: signupEmail,
-        password: signupPassword,
-        nic: signupNic,
-      });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        toast.error(err.errors[0].message);
-        return;
-      }
-    }
-
-    setIsLoading(true);
-    const { error } = await signUp(signupEmail, signupPassword, signupFullName, portal, signupNic);
-    setIsLoading(false);
-
-    if (error) {
-      if (error.message.includes("already registered")) {
-        toast.error(t.authEmailExists || "This email is already registered. Please login instead.");
-      } else {
-        toast.error(error.message);
-      }
-      return;
-    }
-
-    toast.success(t.authSignupSuccess || "Account created successfully!");
-  };
-
-  const getPortalInfo = () => {
-    switch (portal) {
-      case "admin":
-        return {
-          icon: Shield,
-          title: t.adminLogin,
-          subtitle: t.adminLoginSubtitle,
-          color: "text-primary",
-          bgColor: "gradient-primary",
-        };
-      case "branch":
-        return {
-          icon: Building,
-          title: t.branchLogin || "Branch Portal Login",
-          subtitle: t.branchLoginSubtitle || "For branch staff only",
-          color: "text-primary",
-          bgColor: "gradient-primary",
-        };
-      default:
-        return {
-          icon: User,
-          title: t.customerLogin || "Customer Portal Login",
-          subtitle: t.customerLoginSubtitle || "Access your insurance claims",
-          color: "text-primary",
-          bgColor: "gradient-primary",
-        };
-    }
-  };
-
-  const portalInfo = getPortalInfo();
-  const PortalIcon = portalInfo.icon;
 
   if (loading) {
     return (
@@ -175,139 +113,107 @@ const AuthPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Navbar */}
-      <nav className="bg-gradient-to-r from-orange-500 to-amber-400 sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Logo variant="dark" onClick={() => navigate("/")} />
-          <LanguageSelector variant="dark" />
-        </div>
-      </nav>
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Gradient Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-green-100 via-background to-orange-100" />
+      <div className="absolute top-0 left-0 w-1/2 h-full bg-gradient-to-br from-green-200/50 to-transparent" />
+      <div className="absolute bottom-0 right-0 w-1/2 h-full bg-gradient-to-tl from-orange-200/50 to-transparent" />
 
-      <main className="container mx-auto px-4 py-16 flex items-center justify-center min-h-[calc(100vh-4rem)]">
+      {/* Top Bar with Language Selector */}
+      <div className="absolute top-4 right-4 z-10">
+        <LanguageSelector variant="light" />
+      </div>
+
+      {/* Login Card */}
+      <main className="relative z-10 min-h-screen flex items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-md"
         >
-          <div className="glass-card p-8 text-center">
-            {/* Portal Icon */}
-            <div className={`w-16 h-16 rounded-full ${portalInfo.bgColor} flex items-center justify-center mx-auto mb-6`}>
-              <PortalIcon className="w-8 h-8 text-white" />
+          <div className="bg-card/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 text-center border border-border/50">
+            {/* Shield Icon */}
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center mx-auto mb-6 shadow-lg">
+              <Shield className="w-10 h-10 text-white" />
             </div>
 
             <h1 className="text-2xl font-bold text-foreground mb-2">
-              {portalInfo.title}
+              Welcome Back
             </h1>
-            <p className="text-muted-foreground mb-6">
-              {portalInfo.subtitle}
+            <p className="text-muted-foreground mb-8">
+              Sign in to access your portal
             </p>
 
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "login" | "signup")} className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="login" className="flex items-center gap-2">
-                  <LogIn className="w-4 h-4" />
-                  {t.login}
-                </TabsTrigger>
-                <TabsTrigger value="signup" className="flex items-center gap-2">
-                  <UserPlus className="w-4 h-4" />
-                  {t.signup || "Sign Up"}
-                </TabsTrigger>
-              </TabsList>
+            <form onSubmit={handleLogin} className="space-y-5 text-left">
+              <div className="space-y-2">
+                <Label htmlFor="username" className="text-foreground font-medium">
+                  Username
+                </Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder="Enter username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="pl-10 h-12 rounded-xl border-border/50 bg-background/50"
+                    required
+                  />
+                </div>
+              </div>
 
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4 text-left">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-email">{t.email || "Email"}</Label>
-                    <Input
-                      id="login-email"
-                      type="email"
-                      placeholder={t.enterEmail || "Enter your email"}
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      required
-                    />
-                  </div>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-foreground font-medium">
+                  Password
+                </Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10 h-12 rounded-xl border-border/50 bg-background/50"
+                    required
+                  />
+                </div>
+              </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">{t.password}</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      placeholder={t.enterPassword}
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      required
-                    />
-                  </div>
+              <Button 
+                type="submit" 
+                className="w-full h-12 rounded-xl text-base font-semibold bg-gradient-to-r from-orange-500 to-amber-400 hover:from-orange-600 hover:to-amber-500 text-white shadow-lg" 
+                disabled={isLoading}
+              >
+                {isLoading ? "Signing in..." : "Sign In"}
+              </Button>
+            </form>
 
-                  <Button type="submit" className="w-full" variant="hero" disabled={isLoading}>
-                    {isLoading ? (t.loggingIn || "Logging in...") : t.login}
-                  </Button>
-                </form>
-              </TabsContent>
-
-              <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4 text-left">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-name">{t.fullName || "Full Name"}</Label>
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      placeholder={t.enterFullName || "Enter your full name"}
-                      value={signupFullName}
-                      onChange={(e) => setSignupFullName(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  {portal === "customer" && (
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-nic">{t.nic || "NIC Number"}</Label>
-                      <Input
-                        id="signup-nic"
-                        type="text"
-                        placeholder={t.enterNic || "Enter your NIC (e.g., 123456789V)"}
-                        value={signupNic}
-                        onChange={(e) => setSignupNic(e.target.value)}
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">{t.email || "Email"}</Label>
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder={t.enterEmail || "Enter your email"}
-                      value={signupEmail}
-                      onChange={(e) => setSignupEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">{t.password}</Label>
-                    <Input
-                      id="signup-password"
-                      type="password"
-                      placeholder={t.createPassword || "Create a password"}
-                      value={signupPassword}
-                      onChange={(e) => setSignupPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <Button type="submit" className="w-full" variant="hero" disabled={isLoading}>
-                    {isLoading ? (t.creatingAccount || "Creating account...") : (t.createAccount || "Create Account")}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-
-            <p className="text-xs text-muted-foreground mt-6">
-              {t.authTerms || "By continuing, you agree to our Terms of Service and Privacy Policy"}
-            </p>
+            {/* Demo Credentials */}
+            <div className="mt-8 p-4 bg-muted/50 rounded-xl text-left">
+              <p className="text-sm font-semibold text-foreground mb-3">Demo Credentials:</p>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">
+                    <span className="font-mono">customer</span> / <span className="font-mono">customer123</span> → Digital Portal
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Building className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">
+                    <span className="font-mono">staff</span> / <span className="font-mono">staff123</span> → Branch Portal
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">
+                    <span className="font-mono">admin</span> / <span className="font-mono">admin123</span> → Admin Portal
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </motion.div>
       </main>
