@@ -131,13 +131,29 @@ const AdminDashboard = () => {
         query = query.eq("status", statusFilter as any);
       }
 
-      const { data, error } = await query;
+      const { data: claimsData, error: claimsError } = await query;
 
-      if (error) throw error;
+      if (claimsError) throw claimsError;
 
-      setClaims((data || []) as any);
+      // Fetch profiles to get customer names
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, nic");
+
+      // Map profiles to claims
+      const profilesMap = new Map(
+        (profilesData || []).map(p => [p.user_id, { full_name: p.full_name, nic: p.nic }])
+      );
+
+      const claimsWithProfiles = (claimsData || []).map(claim => ({
+        ...claim,
+        profiles: profilesMap.get(claim.user_id) || null
+      }));
+
+      setClaims(claimsWithProfiles as any);
 
       // Calculate stats
+      const data = claimsData;
       const total = data?.length || 0;
       const highRisk = data?.filter(c => c.risk_level === "high").length || 0;
       const fraudAlerts = data?.filter(c => c.fraud_status === "flagged" || c.fraud_status === "suspicious").length || 0;
