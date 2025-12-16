@@ -549,31 +549,20 @@ const BranchPortal = () => {
                         </Select>
                       </div>
                       
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <Label>Hospital Name *</Label>
-                          <Input
-                            placeholder="Enter hospital name"
-                            value={formData.hospitalName}
-                            onChange={(e) => updateFormData("hospitalName", e.target.value)}
-                            className="mt-1"
-                          />
-                        </div>
-                        <div>
-                          <Label>Doctor Name</Label>
-                          <Input
-                            placeholder="Dr. ..."
-                            value={formData.doctorName}
-                            onChange={(e) => updateFormData("doctorName", e.target.value)}
-                            className="mt-1"
-                          />
-                        </div>
+                      <div>
+                        <Label>Doctor Name</Label>
+                        <Input
+                          placeholder="Dr. ..."
+                          value={formData.doctorName}
+                          onChange={(e) => updateFormData("doctorName", e.target.value)}
+                          className="mt-1"
+                        />
                       </div>
                       
                       <div>
-                        <Label>Diagnosis *</Label>
+                        <Label>Diagnosis / Reason for Treatment</Label>
                         <Input
-                          placeholder="Enter diagnosis"
+                          placeholder="Enter diagnosis or reason (optional)"
                           value={formData.diagnosis}
                           onChange={(e) => updateFormData("diagnosis", e.target.value)}
                           className="mt-1"
