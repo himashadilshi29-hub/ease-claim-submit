@@ -1,5 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+
+// Input validation schema
+const requestSchema = z.object({
+  claimId: z.string().uuid("Invalid claim ID format"),
+});
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -82,7 +88,30 @@ serve(async (req) => {
       });
     }
 
-    const { claimId } = await req.json();
+    // Parse and validate request body
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const parseResult = requestSchema.safeParse(body);
+    if (!parseResult.success) {
+      console.log("Validation failed:", parseResult.error.errors);
+      return new Response(JSON.stringify({ 
+        error: "Invalid request format", 
+        details: parseResult.error.errors 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { claimId } = parseResult.data;
     console.log(`Calculating OPD settlement for claim: ${claimId}, user: ${auth.userId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
