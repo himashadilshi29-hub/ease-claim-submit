@@ -1,14 +1,20 @@
 import { useNavigate } from "react-router-dom";
-import { Building, Smartphone, ShieldCheck } from "lucide-react";
+import { Building, Smartphone, ShieldCheck, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Logo from "@/components/shared/Logo";
 import LanguageSelector from "@/components/shared/LanguageSelector";
 import Footer from "@/components/shared/Footer";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/hooks/useAuth";
 
 const LandingPage = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { user, signOut } = useAuth();
+
+  const handleLogout = async () => {
+    await signOut();
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -16,7 +22,20 @@ const LandingPage = () => {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Logo onClick={() => navigate("/")} />
-          <LanguageSelector />
+          <div className="flex items-center gap-4">
+            <LanguageSelector />
+            {user && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                {t.logout}
+              </Button>
+            )}
+          </div>
         </div>
       </nav>
 
