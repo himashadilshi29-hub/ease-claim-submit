@@ -122,9 +122,28 @@ const BranchPortal = () => {
       const { error } = await signIn(loginEmail, loginPassword);
       if (error) {
         toast.error(error.message || "Login failed");
-      } else {
-        toast.success("Login successful!");
+        setLoginLoading(false);
+        return;
       }
+
+      // Check user role after successful login
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", currentUser.id)
+          .maybeSingle();
+
+        if (roleData?.role !== "branch" && roleData?.role !== "admin") {
+          await supabase.auth.signOut();
+          toast.error("Access denied. This portal is for branch staff only.");
+          setLoginLoading(false);
+          return;
+        }
+      }
+
+      toast.success("Login successful!");
     } catch (err) {
       toast.error("An error occurred during login");
     } finally {

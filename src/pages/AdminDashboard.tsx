@@ -98,6 +98,29 @@ const AdminDashboard = () => {
     setIsSigningIn(true);
     
     const { error } = await signIn(email, password);
+
+    if (error) {
+      toast.error(error.message || "Login failed");
+      setIsSigningIn(false);
+      return;
+    }
+
+    // Check user role after successful login
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      if (roleData?.role !== "admin") {
+        await signOut();
+        toast.error("Access denied. This portal is for admins only.");
+        setIsSigningIn(false);
+        return;
+      }
+    }
     
     if (error) {
       toast.error(error.message || "Failed to sign in");
