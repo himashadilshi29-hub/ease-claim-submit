@@ -7,10 +7,23 @@ const requestSchema = z.object({
   claimId: z.string().uuid("Invalid claim ID format"),
 });
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Helper to get CORS headers with origin validation
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || "";
+  const allowedOrigins = Deno.env.get("ALLOWED_ORIGINS")?.split(",") || [];
+  const isAllowed = allowedOrigins.length === 0 || allowedOrigins.includes(origin) || origin.includes("lovable.dev") || origin.includes("localhost");
+  
+  return {
+    "Access-Control-Allow-Origin": isAllowed ? origin || "*" : (allowedOrigins[0] || "*"),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Credentials": "true",
+  };
+}
+
+// Generate request ID for error tracking
+function generateRequestId(): string {
+  return crypto.randomUUID().slice(0, 8);
+}
 
 async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userId?: string; isAdmin?: boolean; isBranch?: boolean; error?: string }> {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -74,16 +87,20 @@ async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userI
 
 // This function orchestrates the entire claim processing pipeline
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const requestId = generateRequestId();
 
   try {
     // Verify authentication
     const auth = await verifyAuth(req);
     if (!auth.authenticated) {
-      console.log("Authentication failed:", auth.error);
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      console.log(`[${requestId}] Authentication failed`);
+      return new Response(JSON.stringify({ error: "Unauthorized", request_id: requestId }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -94,7 +111,7 @@ serve(async (req) => {
     try {
       body = await req.json();
     } catch {
-      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      return new Response(JSON.stringify({ error: "Invalid JSON body", request_id: requestId }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -102,10 +119,10 @@ serve(async (req) => {
 
     const parseResult = requestSchema.safeParse(body);
     if (!parseResult.success) {
-      console.log("Validation failed:", parseResult.error.errors);
+      console.log(`[${requestId}] Validation failed:`, parseResult.error.errors);
       return new Response(JSON.stringify({ 
-        error: "Invalid request format", 
-        details: parseResult.error.errors 
+        error: "Invalid request format",
+        request_id: requestId
       }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -113,7 +130,7 @@ serve(async (req) => {
     }
 
     const { claimId } = parseResult.data;
-    console.log(`Starting claim processing pipeline for: ${claimId}, user: ${auth.userId}`);
+    console.log(`[${requestId}] Starting claim processing pipeline for: ${claimId}, user: ${auth.userId}`);
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -133,13 +150,13 @@ serve(async (req) => {
 
     // Check access permissions
     if (!auth.isAdmin && !auth.isBranch && claim.user_id !== auth.userId) {
-      return new Response(JSON.stringify({ error: "Access denied" }), {
+      return new Response(JSON.stringify({ error: "Access denied", request_id: requestId }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`Found claim ${claim.reference_number} with ${claim.claim_documents?.length || 0} documents`);
+    console.log(`[${requestId}] Found claim ${claim.reference_number} with ${claim.claim_documents?.length || 0} documents`);
 
     // Get the auth header to pass to sub-functions
     const authHeader = req.headers.get("Authorization") || "";
@@ -152,7 +169,7 @@ serve(async (req) => {
     };
 
     // Step 1: Process each document with OCR
-    console.log("Step 1: Processing documents with OCR...");
+    console.log(`[${requestId}] Step 1: Processing documents with OCR...`);
     for (const doc of claim.claim_documents || []) {
       try {
         const ocrResponse = await fetch(`${SUPABASE_URL}/functions/v1/process-claim-document`, {
@@ -172,19 +189,19 @@ serve(async (req) => {
         if (ocrResponse.ok) {
           const ocrResult = await ocrResponse.json();
           pipelineResults.ocr.push(ocrResult);
-          console.log(`OCR completed for document ${doc.id}: confidence ${ocrResult.ocr_result?.ocr_confidence || 0}%`);
+          console.log(`[${requestId}] OCR completed for document ${doc.id}: confidence ${ocrResult.ocr_result?.ocr_confidence || 0}%`);
         } else {
-          console.error(`OCR failed for document ${doc.id}:`, await ocrResponse.text());
+          console.error(`[${requestId}] OCR failed for document ${doc.id}`);
         }
       } catch (ocrError) {
-        console.error(`OCR failed for document ${doc.id}:`, ocrError);
+        console.error(`[${requestId}] OCR failed for document ${doc.id}:`, ocrError);
       }
     }
 
     // Check if any documents need reupload
     const lowConfidenceDocs = pipelineResults.ocr.filter(r => r.status === "reupload_required");
     if (lowConfidenceDocs.length > 0) {
-      console.log(`${lowConfidenceDocs.length} documents require reupload`);
+      console.log(`[${requestId}] ${lowConfidenceDocs.length} documents require reupload`);
       await supabase
         .from("claims")
         .update({ processing_status: "reupload_required" })
@@ -195,13 +212,14 @@ serve(async (req) => {
         status: "reupload_required",
         message: `${lowConfidenceDocs.length} document(s) have low OCR confidence and need to be reuploaded`,
         documents_needing_reupload: lowConfidenceDocs.map(d => d.document_id),
+        request_id: requestId,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // Step 2: Validate claim
-    console.log("Step 2: Validating claim...");
+    console.log(`[${requestId}] Step 2: Validating claim...`);
     try {
       const validationResponse = await fetch(`${SUPABASE_URL}/functions/v1/validate-claim`, {
         method: "POST",
@@ -214,16 +232,16 @@ serve(async (req) => {
 
       if (validationResponse.ok) {
         pipelineResults.validation = await validationResponse.json();
-        console.log(`Validation completed: score ${pipelineResults.validation?.validation_result?.overall_validation_score || 0}`);
+        console.log(`[${requestId}] Validation completed: score ${pipelineResults.validation?.validation_result?.overall_validation_score || 0}`);
       } else {
-        console.error("Validation failed:", await validationResponse.text());
+        console.error(`[${requestId}] Validation failed`);
       }
     } catch (validationError) {
-      console.error("Validation failed:", validationError);
+      console.error(`[${requestId}] Validation failed:`, validationError);
     }
 
     // Step 3: Fraud detection
-    console.log("Step 3: Running fraud detection...");
+    console.log(`[${requestId}] Step 3: Running fraud detection...`);
     try {
       const fraudResponse = await fetch(`${SUPABASE_URL}/functions/v1/detect-fraud`, {
         method: "POST",
@@ -236,16 +254,16 @@ serve(async (req) => {
 
       if (fraudResponse.ok) {
         pipelineResults.fraud = await fraudResponse.json();
-        console.log(`Fraud detection completed: score ${pipelineResults.fraud?.fraud_result?.fraud_score || 0}`);
+        console.log(`[${requestId}] Fraud detection completed: score ${pipelineResults.fraud?.fraud_result?.fraud_score || 0}`);
       } else {
-        console.error("Fraud detection failed:", await fraudResponse.text());
+        console.error(`[${requestId}] Fraud detection failed`);
       }
     } catch (fraudError) {
-      console.error("Fraud detection failed:", fraudError);
+      console.error(`[${requestId}] Fraud detection failed:`, fraudError);
     }
 
     // Step 4: Calculate settlement
-    console.log("Step 4: Calculating settlement...");
+    console.log(`[${requestId}] Step 4: Calculating settlement...`);
     try {
       const settlementResponse = await fetch(`${SUPABASE_URL}/functions/v1/calculate-settlement`, {
         method: "POST",
@@ -258,12 +276,12 @@ serve(async (req) => {
 
       if (settlementResponse.ok) {
         pipelineResults.settlement = await settlementResponse.json();
-        console.log(`Settlement calculated: decision ${pipelineResults.settlement?.settlement?.decision}`);
+        console.log(`[${requestId}] Settlement calculated: decision ${pipelineResults.settlement?.settlement?.decision}`);
       } else {
-        console.error("Settlement calculation failed:", await settlementResponse.text());
+        console.error(`[${requestId}] Settlement calculation failed`);
       }
     } catch (settlementError) {
-      console.error("Settlement calculation failed:", settlementError);
+      console.error(`[${requestId}] Settlement calculation failed:`, settlementError);
     }
 
     // Generate final summary
@@ -287,8 +305,8 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Pipeline error:", error);
-    return new Response(JSON.stringify({ error: "Pipeline processing failed" }), {
+    console.error(`[${requestId}] Pipeline error:`, error);
+    return new Response(JSON.stringify({ error: "An error occurred processing your request", request_id: requestId }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

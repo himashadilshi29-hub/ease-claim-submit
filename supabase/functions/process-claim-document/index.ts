@@ -10,10 +10,23 @@ const requestSchema = z.object({
   claimType: z.enum(["opd", "dental", "spectacles", "hospitalization"]).optional(),
 });
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Helper to get CORS headers with origin validation
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || "";
+  const allowedOrigins = Deno.env.get("ALLOWED_ORIGINS")?.split(",") || [];
+  const isAllowed = allowedOrigins.length === 0 || allowedOrigins.includes(origin) || origin.includes("lovable.dev") || origin.includes("localhost");
+  
+  return {
+    "Access-Control-Allow-Origin": isAllowed ? origin : (allowedOrigins[0] || "*"),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Credentials": "true",
+  };
+}
+
+// Generate request ID for error tracking
+function generateRequestId(): string {
+  return crypto.randomUUID().slice(0, 8);
+}
 
 // OPD Mandatory documents configuration based on Janashakthi requirements
 const MANDATORY_DOCUMENTS = {
@@ -157,6 +170,9 @@ async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userI
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  const requestId = generateRequestId();
+  
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -165,8 +181,8 @@ serve(async (req) => {
     // Verify authentication
     const auth = await verifyAuth(req);
     if (!auth.authenticated) {
-      console.log("Authentication failed:", auth.error);
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      console.log(`[${requestId}] Authentication failed`);
+      return new Response(JSON.stringify({ error: "Unauthorized", request_id: requestId }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -177,7 +193,7 @@ serve(async (req) => {
     try {
       body = await req.json();
     } catch {
-      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      return new Response(JSON.stringify({ error: "Invalid JSON body", request_id: requestId }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -185,10 +201,10 @@ serve(async (req) => {
 
     const parseResult = requestSchema.safeParse(body);
     if (!parseResult.success) {
-      console.log("Validation failed:", parseResult.error.errors);
+      console.log(`[${requestId}] Validation failed:`, parseResult.error.errors);
       return new Response(JSON.stringify({ 
-        error: "Invalid request format", 
-        details: parseResult.error.errors 
+        error: "Invalid request format",
+        request_id: requestId
       }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -196,13 +212,14 @@ serve(async (req) => {
     }
 
     const { claimId, documentId, fileUrl, claimType } = parseResult.data;
-    console.log(`Processing OPD document for claim: ${claimId}, document: ${documentId}, user: ${auth.userId}`);
+    console.log(`[${requestId}] Processing OPD document for claim: ${claimId}, document: ${documentId}, user: ${auth.userId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!LOVABLE_API_KEY) {
+      console.error(`[${requestId}] Missing LOVABLE_API_KEY`);
       throw new Error("Server configuration error");
     }
 
@@ -217,7 +234,7 @@ serve(async (req) => {
         .maybeSingle();
       
       if (!claim || claim.user_id !== auth.userId) {
-        return new Response(JSON.stringify({ error: "Access denied" }), {
+        return new Response(JSON.stringify({ error: "Access denied", request_id: requestId }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -529,8 +546,8 @@ Return a JSON object with complete entity extraction for OPD claim processing.`;
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error processing document:", error);
-    return new Response(JSON.stringify({ error: "Processing failed" }), {
+    console.error(`[${requestId}] Error processing document:`, error);
+    return new Response(JSON.stringify({ error: "An error occurred processing your request", request_id: requestId }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
