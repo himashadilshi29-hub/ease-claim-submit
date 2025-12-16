@@ -48,7 +48,6 @@ interface Claim {
   ocr_level: string | null;
   created_at: string;
   diagnosis: string | null;
-  hospital_name: string | null;
   profiles?: { full_name: string; nic: string } | null;
 }
 

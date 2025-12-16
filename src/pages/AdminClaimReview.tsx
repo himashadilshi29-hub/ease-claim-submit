@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, FileText, CheckCircle, Eye, Download, Clock, AlertTriangle, Building, Calendar, XCircle, CheckCircle2, RefreshCw, Loader2 } from "lucide-react";
+import { ArrowLeft, User, FileText, CheckCircle, Eye, Download, Clock, AlertTriangle, Calendar, XCircle, CheckCircle2, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,7 +21,6 @@ interface ClaimData {
   claim_amount: number;
   approved_amount: number;
   settled_amount: number;
-  hospital_name: string;
   diagnosis: string;
   date_of_treatment: string;
   admission_date: string;
@@ -330,13 +329,6 @@ const AdminClaimReview = () => {
                   <div>
                     <p className="text-xs text-muted-foreground">Claim Amount</p>
                     <p className="font-bold text-primary text-lg">{formatCurrency(claim.claim_amount)}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Building className="w-4 h-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Hospital</p>
-                    <p className="font-medium text-primary">{claim.hospital_name || "N/A"}</p>
                   </div>
                 </div>
                 <div>
