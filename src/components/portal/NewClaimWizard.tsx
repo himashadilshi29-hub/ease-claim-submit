@@ -663,31 +663,20 @@ const NewClaimWizard = ({ onComplete }: NewClaimWizardProps) => {
                         </div>
                       )}
                       
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <Label>Hospital / Clinic Name *</Label>
-                          <Input
-                            placeholder="Enter hospital name"
-                            value={formData.hospitalName}
-                            onChange={(e) => updateFormData("hospitalName", e.target.value)}
-                            className="mt-1"
-                          />
-                        </div>
-                        <div>
-                          <Label>Doctor Name</Label>
-                          <Input
-                            placeholder="Dr. ..."
-                            value={formData.doctorName}
-                            onChange={(e) => updateFormData("doctorName", e.target.value)}
-                            className="mt-1"
-                          />
-                        </div>
+                      <div>
+                        <Label>Doctor Name</Label>
+                        <Input
+                          placeholder="Dr. ..."
+                          value={formData.doctorName}
+                          onChange={(e) => updateFormData("doctorName", e.target.value)}
+                          className="mt-1"
+                        />
                       </div>
                       
                       <div>
-                        <Label>Diagnosis / Reason for Treatment *</Label>
+                        <Label>Diagnosis / Reason for Treatment</Label>
                         <Input
-                          placeholder="Enter diagnosis or reason"
+                          placeholder="Enter diagnosis or reason (optional)"
                           value={formData.diagnosis}
                           onChange={(e) => updateFormData("diagnosis", e.target.value)}
                           className="mt-1"
@@ -717,8 +706,6 @@ const NewClaimWizard = ({ onComplete }: NewClaimWizardProps) => {
                       !formData.accountNumber || 
                       !formData.bankName || 
                       !formData.claimAmount ||
-                      !formData.hospitalName ||
-                      !formData.diagnosis ||
                       (formData.claimType === "hospitalization" ? !formData.admissionDate : !formData.dateOfTreatment)
                     }
                   >
