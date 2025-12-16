@@ -28,83 +28,83 @@ function generateRequestId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
 
-// OPD Mandatory documents configuration based on Janashakthi requirements
-const MANDATORY_DOCUMENTS = {
-  opd: {
-    prescription: { 
-      mandatory: true, 
-      keywords: [
-        "Prescription", "Rx", "Doctor's Name", "Consultant", "Date of Visit", 
-        "Patient Name", "Age/Sex", "Diagnosis", "Prescribed Drugs", "Dosage", 
-        "Frequency", "Duration", "Instructions", "Treatment Plan", "Follow-up Date",
-        "Clinic Stamp", "Doctor's Signature", "Advice", "Next Visit", 
-        "Hospital/Clinic Name", "Medication List", "Medical Officer", "MO", 
-        "SLMC Reg No.", "OPD No.", "Hospital No."
-      ] 
-    },
-    medical_bill: { 
-      mandatory: true, 
-      keywords: [
-        "Bill", "Invoice", "Receipt", "Patient Name", "Bill No.", "Date", 
-        "Total Amount", "Consultation Fee", "Doctor Fee", "Lab Charges", 
-        "Medicine Charges", "Room Charges", "Tax/VAT", "Discount", "Net Amount",
-        "Hospital Name", "Cash/Card/Online", "Billing Department", 
-        "Acknowledged by", "Authorized Signature", "Pharmacy Bill"
-      ] 
-    },
-    lab_report: {
-      mandatory: false,
-      keywords: [
-        "Lab Report", "Laboratory", "Test Results", "Blood Test", "Urine Test",
-        "X-Ray", "Scan", "MRI", "CT", "ECG", "Medical Report"
-      ]
-    },
-    channelling_bill: {
-      mandatory: false,
-      keywords: [
-        "Channelling", "Consultation", "Doctor Fee", "Specialist", "OPD Ticket"
-      ]
-    }
+// OPD Document Types with explicit purposes
+const OPD_DOCUMENT_CONFIG = {
+  prescription: {
+    mandatory: true,
+    purpose: "PROVES MEDICAL NECESSITY - Required to validate medicines prescribed",
+    keywords: [
+      "Rx", "Prescription", "Doctor's Name", "Consultant", "SLMC Reg No.",
+      "Diagnosis", "Prescribed Drugs", "Dosage", "Frequency", "Duration",
+      "Patient Name", "Date of Visit", "Treatment Plan", "Follow-up",
+      "Medical Officer", "Clinic Stamp", "Doctor's Signature"
+    ],
+    validation_checklist: [
+      "Doctor name and SLMC registration present",
+      "Diagnosis/medical condition stated",
+      "Medicine names with dosage specified",
+      "Quantity and frequency mentioned",
+      "Date of consultation visible",
+      "Patient name matches policy member"
+    ]
   },
-  spectacles: {
-    prescription: { 
-      mandatory: true, 
-      keywords: ["Eye Test", "Vision", "Spectacles", "Optical", "Lens Power", "Eye Prescription"] 
-    },
-    medical_bill: { 
-      mandatory: true, 
-      keywords: ["Bill", "Invoice", "Receipt", "Spectacles", "Frame", "Lens"] 
-    }
+  pharmacy_bill: {
+    mandatory: true,
+    purpose: "PROVES COST INCURRED - Required to verify medicine charges",
+    keywords: [
+      "Pharmacy Bill", "Medicine Charges", "Invoice", "Receipt",
+      "Drug", "Tablet", "Capsule", "Syrup", "Ointment", "Injection",
+      "Total Amount", "Bill No.", "Bill Date", "Pharmacy Name",
+      "Unit Price", "Quantity", "Net Amount"
+    ],
+    validation_checklist: [
+      "Medicine names match prescription",
+      "Quantities match prescription",
+      "Prices are reasonable",
+      "No vitamins or cosmetics included",
+      "Bill date within warranty period"
+    ]
   },
-  dental: {
-    prescription: { 
-      mandatory: true, 
-      keywords: ["Dental", "Tooth", "Oral", "Dentist", "Dental Treatment"] 
-    },
-    medical_bill: { 
-      mandatory: true, 
-      keywords: ["Bill", "Invoice", "Receipt", "Dental", "Tooth"] 
-    }
+  doctor_charges: {
+    mandatory: false,
+    purpose: "PROVES CONSULTATION COST - Validates channelling/doctor fees",
+    keywords: [
+      "Consultation Fee", "Doctor Fee", "Channelling Bill", "Channelling",
+      "Specialist Fee", "OPD Ticket", "Appointment Fee", "Professional Fee",
+      "Consultation Charges", "Channel Receipt"
+    ],
+    validation_checklist: [
+      "Fee within standard range (LKR 500-5000)",
+      "Doctor name matches prescription",
+      "Date matches treatment date",
+      "Hospital/clinic stamp present"
+    ]
+  },
+  lab_report: {
+    mandatory: false,
+    purpose: "SUPPORTS DIAGNOSIS - Lab tests related to treatment",
+    keywords: [
+      "Lab Report", "Laboratory", "Test Results", "Blood Test", "Urine Test",
+      "X-Ray", "Scan", "MRI", "CT", "ECG", "Medical Report", "Investigation"
+    ]
   }
 };
 
-// OPD Validation Points
-const OPD_VALIDATION_POINTS = [
-  "Bill Date visibility and validity",
-  "Claim Submission Warranty Period",
-  "Submitted Clause verification",
-  "Name on Prescription matches policyholder/member",
-  "Claim Amount verification against policy limits",
-  "Prescription vs Bill - Medicines matching (different brand names)",
-  "Prescription vs Bill - Number of items matching",
-  "Ailment covered under policy conditions",
-  "Exclusion Conditions (vitamins, non-covered medicines)",
-  "Channelling Bills legitimacy",
-  "Bill Amount abnormalities check",
-  "Medical Report Bills (printed or handwritten in English)",
-  "Sinhala Bills for Ayurvedic/Siddha Medicine",
-  "Skin Treatments (only allergy-related accepted)",
-  "Dental and Spectacle Claims (only if sub-cover under OPD)"
+// Exclusion items to detect
+const EXCLUSION_ITEMS = {
+  vitamins: ["Vitamin", "Vit-", "Multivitamin", "B-Complex", "Calcium", "Iron Supplement", "Folic Acid", "Omega"],
+  cosmetics: ["Cosmetic", "Beauty", "Skin Cream", "Face Wash", "Moisturizer", "Sunscreen", "Anti-aging"],
+  non_covered: ["Tonic", "Health Supplement", "Ayurvedic Tonic", "Hair Oil", "Body Lotion"]
+};
+
+// OPD Validation Flow
+const OPD_VALIDATION_FLOW = [
+  "1. PRESCRIPTION: Extract doctor details, diagnosis, and prescribed medicines",
+  "2. PHARMACY BILL: Extract billed medicines, quantities, and prices",
+  "3. DOCTOR CHARGES: Extract consultation/channelling fees if present",
+  "4. CROSS-CHECK: Compare billed medicines against prescription",
+  "5. EXCLUSIONS: Identify vitamins, cosmetics, and non-covered items",
+  "6. CALCULATE: Determine covered amount after exclusions"
 ];
 
 async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userId?: string; isAdmin?: boolean; isBranch?: boolean; error?: string }> {
@@ -247,41 +247,46 @@ serve(async (req) => {
       .update({ processing_status: "ocr_processing" })
       .eq("id", claimId);
 
-    const mandatoryDocs = MANDATORY_DOCUMENTS[claimType as keyof typeof MANDATORY_DOCUMENTS] || MANDATORY_DOCUMENTS.opd;
+    const systemPrompt = `You are an expert insurance document analyzer for Sri Lankan OPD claims (Janashakthi Insurance).
 
-    const systemPrompt = `You are an expert insurance document analyzer specializing in Sri Lankan OPD (Outpatient Department) medical claims for Janashakthi Insurance.
+## OPD Claim Validation Flow
+${OPD_VALIDATION_FLOW.join('\n')}
 
-Analyze the provided document and extract all relevant information for OPD claim processing.
+## Document Types & Purposes
 
-Document Classification Keywords:
-${JSON.stringify(mandatoryDocs, null, 2)}
+### PRESCRIPTION (Mandatory) - Proves Medical Necessity
+Purpose: ${OPD_DOCUMENT_CONFIG.prescription.purpose}
+Keywords: ${OPD_DOCUMENT_CONFIG.prescription.keywords.join(', ')}
+Checklist: ${OPD_DOCUMENT_CONFIG.prescription.validation_checklist.join('; ')}
 
-OPD Validation Points to Consider:
-${OPD_VALIDATION_POINTS.map((p, i) => `${i + 1}. ${p}`).join('\n')}
+### PHARMACY BILL (Mandatory) - Proves Cost Incurred
+Purpose: ${OPD_DOCUMENT_CONFIG.pharmacy_bill.purpose}
+Keywords: ${OPD_DOCUMENT_CONFIG.pharmacy_bill.keywords.join(', ')}
+Checklist: ${OPD_DOCUMENT_CONFIG.pharmacy_bill.validation_checklist.join('; ')}
 
-For each document, identify:
-1. Document type (prescription, medical_bill, lab_report, channelling_bill, other)
-2. OCR confidence score (0-100) - based on text clarity
-3. Whether it's handwritten or printed
-4. Language detected (English, Sinhala, Tamil, Mixed)
-5. All key entities for OPD claims:
-   - Patient details (name, age, sex, ID, clinic/OPD number)
-   - Doctor details (name, SLMC registration number, specialty)
-   - Hospital/clinic details (name, address)
-   - Date of visit/treatment
-   - Diagnosis and symptoms
-   - Medicines prescribed (name, dosage, quantity, frequency)
-   - Billing information (items, individual amounts, consultation fee, medicine charges, lab charges, total)
-   - Bill date and bill number
-6. AI keywords found from the mandatory documents list
-7. Validation flags for OPD-specific checks
+### DOCTOR CHARGES (Optional) - Consultation/Channelling
+Purpose: ${OPD_DOCUMENT_CONFIG.doctor_charges.purpose}
+Keywords: ${OPD_DOCUMENT_CONFIG.doctor_charges.keywords.join(', ')}
+Checklist: ${OPD_DOCUMENT_CONFIG.doctor_charges.validation_checklist.join('; ')}
 
-OCR Confidence Rules:
+## Exclusion Detection
+- VITAMINS: ${EXCLUSION_ITEMS.vitamins.join(', ')}
+- COSMETICS: ${EXCLUSION_ITEMS.cosmetics.join(', ')}
+- NON-COVERED: ${EXCLUSION_ITEMS.non_covered.join(', ')}
+
+## Instructions
+1. Classify document type (prescription, pharmacy_bill, doctor_charges, lab_report, other)
+2. Extract ALL entities based on document type
+3. For PRESCRIPTION: Get doctor details, diagnosis, and all prescribed medicines with dosage
+4. For PHARMACY BILL: Get all billed medicines, quantities, and prices
+5. For DOCTOR CHARGES: Get consultation fee and doctor details
+6. Flag any vitamins, cosmetics, or excluded items found
+7. Assess OCR confidence (≥90% accept, 50-89% reupload, <50% reject)
+
+## OCR Confidence Rules
 - ≥90%: Accept automatically
-- 50-89%: Prompt for re-upload (max 3 attempts), then route to manual review
-- <50%: Reject automatically
-
-Return a JSON object with complete entity extraction for OPD claim processing.`;
+- 50-89%: Prompt for re-upload (max 3 attempts)
+- <50%: Reject automatically`;
 
     // Call Lovable AI for document analysis
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -297,10 +302,15 @@ Return a JSON object with complete entity extraction for OPD claim processing.`;
           { 
             role: "user", 
             content: `Analyze this OPD insurance claim document. Document URL: ${fileUrl}. 
-            Claim type: ${claimType || 'opd'}. 
-            Extract all relevant information for OPD claim processing.
-            Focus on: patient name matching, bill date validity, medicine-prescription matching, excluded items (vitamins, cosmetics).
-            Simulate realistic OCR output as if you scanned this document.` 
+Claim type: ${claimType || 'opd'}. 
+
+CRITICAL: Identify if this is a PRESCRIPTION, PHARMACY BILL, or DOCTOR CHARGES document.
+- For PRESCRIPTION: Extract doctor name, SLMC no, diagnosis, ALL prescribed medicines with dosage/quantity
+- For PHARMACY BILL: Extract ALL billed medicines, quantities, prices, and check for vitamins/cosmetics
+- For DOCTOR CHARGES: Extract consultation fee and verify doctor details
+
+Flag any excluded items: vitamins, cosmetics, non-covered medicines.
+Simulate realistic OCR output as if you scanned this document.` 
           },
         ],
         tools: [
@@ -314,7 +324,8 @@ Return a JSON object with complete entity extraction for OPD claim processing.`;
                 properties: {
                   document_type: { 
                     type: "string", 
-                    enum: ["prescription", "medical_bill", "lab_report", "channelling_bill", "other"] 
+                    enum: ["prescription", "pharmacy_bill", "doctor_charges", "lab_report", "other"],
+                    description: "PRESCRIPTION proves necessity, PHARMACY_BILL proves medicine cost, DOCTOR_CHARGES proves consultation cost"
                   },
                   ocr_confidence: { type: "number", minimum: 0, maximum: 100 },
                   language_detected: { type: "string", enum: ["English", "Sinhala", "Tamil", "Mixed"] },

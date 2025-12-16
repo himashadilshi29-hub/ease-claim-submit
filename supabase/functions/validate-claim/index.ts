@@ -25,26 +25,57 @@ function generateRequestId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
 
-// OPD Validation Points from Janashakthi requirements
-const OPD_VALIDATION_RULES = {
-  bill_date_check: { weight: 0.10, description: "Bill Date must be clearly visible and valid" },
-  warranty_period_check: { weight: 0.10, description: "Claim must be submitted within the warranty period (typically 30 days)" },
-  submitted_clause_check: { weight: 0.05, description: "Submitted clause must be clearly mentioned in claim documents" },
-  name_matching_check: { weight: 0.10, description: "Name on Prescription must match policyholder or covered member" },
-  claim_amount_check: { weight: 0.10, description: "Claim amount must align with policy limits" },
-  prescription_bill_medicine_match: { weight: 0.15, description: "Medicines billed must match prescription (even with different brand names)" },
-  prescription_bill_quantity_match: { weight: 0.10, description: "Quantity in bill must match prescription" },
-  ailment_coverage_check: { weight: 0.10, description: "Ailment must fall under covered ailments as per policy" },
-  exclusion_check: { weight: 0.10, description: "Exclude vitamins, cosmetics, and non-covered medicines" },
-  channelling_bill_check: { weight: 0.05, description: "Verify channelling bill legitimacy and consistency with standard charges" },
-  bill_amount_abnormality_check: { weight: 0.05, description: "Identify unusually high or inconsistent billing amounts" }
+// OPD Document Types and Validation Configuration
+const OPD_DOCUMENT_TYPES = {
+  prescription: {
+    mandatory: true,
+    purpose: "Proves medical necessity",
+    keywords: ["Rx", "Doctor's Name", "Diagnosis", "Prescribed Drugs", "Dosage", "Frequency", "Duration", "SLMC Reg No.", "Consultant", "Treatment Plan"],
+    validation_checks: ["doctor_name_present", "diagnosis_present", "medicines_listed", "dosage_specified", "date_valid"]
+  },
+  pharmacy_bill: {
+    mandatory: true,
+    purpose: "Proves cost incurred for medicines",
+    keywords: ["Pharmacy Bill", "Medicine Charges", "Drug", "Tablet", "Capsule", "Syrup", "Ointment", "Total Amount", "Bill No.", "Invoice"],
+    validation_checks: ["medicines_match_prescription", "quantities_match", "prices_reasonable", "no_excluded_items"]
+  },
+  doctor_charges: {
+    mandatory: false,
+    purpose: "Proves consultation/channelling cost incurred",
+    keywords: ["Consultation Fee", "Doctor Fee", "Channelling Bill", "Specialist Fee", "OPD Ticket", "Appointment Fee", "Professional Fee"],
+    validation_checks: ["fee_within_standard_range", "doctor_details_present", "date_matches_treatment"]
+  }
 };
 
+// OPD Validation Points from Janashakthi requirements
+const OPD_VALIDATION_RULES = {
+  // Prescription Validation
+  prescription_present: { weight: 0.15, description: "Prescription document is present and valid" },
+  prescription_doctor_details: { weight: 0.05, description: "Doctor's name and SLMC registration number visible" },
+  prescription_diagnosis: { weight: 0.10, description: "Diagnosis clearly stated on prescription" },
+  prescription_medicines: { weight: 0.10, description: "Medicines, dosage, and frequency specified" },
+  
+  // Pharmacy Bill Validation
+  pharmacy_bill_present: { weight: 0.10, description: "Pharmacy bill/invoice is present" },
+  pharmacy_bill_medicines_match: { weight: 0.15, description: "Billed medicines match prescription (including generic equivalents)" },
+  pharmacy_bill_quantity_match: { weight: 0.10, description: "Quantities billed match prescription" },
+  pharmacy_bill_exclusions: { weight: 0.10, description: "No vitamins, cosmetics, or non-covered items" },
+  
+  // Doctor/Channelling Charges Validation
+  doctor_charges_valid: { weight: 0.05, description: "Consultation/channelling fees within standard range" },
+  
+  // General Validation
+  bill_date_check: { weight: 0.02, description: "Bill date clearly visible and valid" },
+  warranty_period_check: { weight: 0.03, description: "Claim submitted within warranty period" },
+  name_matching_check: { weight: 0.05, description: "Patient name matches policyholder/member" }
+};
+
+// Cross-Check Scoring Weights
 const SCORING_WEIGHTS = {
-  prescription_diagnosis: 0.35,
-  prescription_bill: 0.30,
-  diagnosis_treatment: 0.20,
-  billing_policy: 0.15
+  prescription_validation: 0.40,  // Prescription proves medical necessity
+  prescription_bill_match: 0.35,  // Cross-check between prescription and bill
+  doctor_charges_validation: 0.10, // Doctor/channelling fee validation
+  policy_compliance: 0.15         // Policy limits and exclusions
 };
 
 async function verifyAuth(req: Request): Promise<{ authenticated: boolean; userId?: string; isAdmin?: boolean; isBranch?: boolean; error?: string }> {
@@ -232,25 +263,40 @@ serve(async (req) => {
 
     const systemPrompt = `You are an expert OPD insurance claim validator for Janashakthi Insurance in Sri Lanka.
 
-Validate this OPD claim based on the following 15 validation points:
+## OPD Claim Validation Flow
 
-1. Bill Date – Must be clearly visible and valid
-2. Claim Submission Warranty Period – Within ${warrantyDays} days of treatment
-3. Submitted Clause – Clearly mentioned in claim documents
-4. Name on Prescription – Must match policyholder or covered member
-5. Claim Amount – Verify against policy OPD limit
-6. Prescription vs. Bill – Medicines matching (consider different brand names for same generic)
-7. Prescription vs. Bill – Number of items must match
-8. Ailment – Must be covered under policy conditions
-9. Exclusion Conditions – Exclude vitamins, cosmetics, non-covered medicines
-10. Channelling Bills – Verify legitimacy and standard charges
-11. Bill Amount Abnormalities – Check for unusually high amounts
-12. Medical Report Bills – Acceptable if printed/handwritten in English
-13. Sinhala Bills for Ayurvedic/Siddha Medicine – Accept if applicable
-14. Skin Treatments – Accept only for allergy-related conditions
-15. Dental and Spectacle Claims – Accept only if covered under OPD sub-cover
+### Step 1: PRESCRIPTION VALIDATION (Proves Medical Necessity)
+The prescription is MANDATORY. Validate:
+- Doctor's Name and SLMC Registration Number
+- Diagnosis (medical condition/ailment)
+- Prescribed Drugs with dosage, frequency, and duration
+- Date of consultation
+- Patient name matches policy member
+Keywords to find: ${OPD_DOCUMENT_TYPES.prescription.keywords.join(', ')}
 
-Policy Details:
+### Step 2: PHARMACY BILL VALIDATION (Proves Medicine Cost Incurred)
+The pharmacy bill is MANDATORY. Validate:
+- Medicine names and quantities
+- Individual prices and total amount
+- Bill date and bill number
+- Pharmacy name/stamp
+Keywords to find: ${OPD_DOCUMENT_TYPES.pharmacy_bill.keywords.join(', ')}
+
+### Step 3: DOCTOR CHARGES VALIDATION (Consultation/Channelling)
+Doctor fees are optional but should be validated if present:
+- Consultation/channelling fee amount
+- Doctor name matching prescription
+- Fee within standard range (typically LKR 500-5000)
+Keywords to find: ${OPD_DOCUMENT_TYPES.doctor_charges.keywords.join(', ')}
+
+### Step 4: CRITICAL CROSS-CHECK (Prescription vs Bill)
+Compare the Pharmacy Bill against the Prescription:
+1. Each medicine billed MUST be on the prescription (or generic equivalent)
+2. Quantities billed MUST match prescribed quantities
+3. No vitamins, cosmetics, or non-covered items should be included
+4. Only pay for what was prescribed
+
+## Policy Details
 - Type: ${claim.policy?.policy_type || 'retail'}
 - OPD Limit: LKR ${claim.policy?.opd_limit || 0}
 - Co-payment: ${claim.policy?.co_payment_percentage || 0}%
@@ -258,40 +304,48 @@ Policy Details:
 - Exclusions: ${JSON.stringify(claim.policy?.exclusions || [])}
 - Special Covers: ${JSON.stringify(claim.policy?.special_covers || [])}
 
-Claim Details:
+## Claim Details
 - Type: ${claim.claim_type}
 - Amount: LKR ${claim.claim_amount}
 - Diagnosis: ${claim.diagnosis || 'Not specified'}
 - Date of Treatment: ${claim.date_of_treatment || 'Not specified'}
 - Previous Claims Total: LKR ${previousClaimsTotal}
+- Remaining Coverage: LKR ${(claim.policy?.opd_limit || 0) - previousClaimsTotal}
 - Within Warranty: ${isWithinWarranty}
 
-Claimant Details:
+## Claimant Details
 - Member Name: ${claim.member?.member_name || 'Unknown'}
 - Relationship: ${claim.relationship}
 
-OCR Extracted Data:
+## OCR Extracted Documents
 ${JSON.stringify(ocrResults?.map(r => ({
-  type: r.document_type,
+  document_type: r.document_type,
   confidence: r.ocr_confidence,
   entities: r.extracted_entities,
   language: r.language_detected,
-  handwritten: r.is_handwritten
+  handwritten: r.is_handwritten,
+  keywords_found: r.ai_keywords_found
 })) || [], null, 2)}
 
-Medicine Database (sample):
+## Medicine Database (for generic name matching)
 ${JSON.stringify(medicines?.slice(0, 30) || [])}
 
-Disease-Medicine Mappings:
+## Disease-Medicine Mappings
 ${JSON.stringify(diseaseMappings || [])}
 
-Scoring Weights:
-- Prescription ↔ Diagnosis: ${SCORING_WEIGHTS.prescription_diagnosis * 100}%
-- Prescription ↔ Bill: ${SCORING_WEIGHTS.prescription_bill * 100}%
-- Diagnosis ↔ Treatments: ${SCORING_WEIGHTS.diagnosis_treatment * 100}%
-- Billing ↔ Policy: ${SCORING_WEIGHTS.billing_policy * 100}%
+## Scoring Weights
+- Prescription Validation: ${SCORING_WEIGHTS.prescription_validation * 100}%
+- Prescription ↔ Bill Cross-Check: ${SCORING_WEIGHTS.prescription_bill_match * 100}%
+- Doctor Charges Validation: ${SCORING_WEIGHTS.doctor_charges_validation * 100}%
+- Policy Compliance: ${SCORING_WEIGHTS.policy_compliance * 100}%
 
-Return comprehensive validation results with detailed scoring for each check.`;
+Provide detailed validation with:
+1. Prescription analysis (medical necessity proven?)
+2. Pharmacy bill analysis (costs verified?)
+3. Doctor charges analysis (fees valid?)
+4. Cross-check results (bill matches prescription?)
+5. Excluded items found (vitamins, cosmetics, non-covered)
+6. Final payable amount calculation`;
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -320,67 +374,113 @@ Return comprehensive validation results with detailed scoring for each check.`;
                   name_matches_prescription: { type: "boolean" },
                   bill_date_valid: { type: "boolean" },
                   within_warranty_period: { type: "boolean" },
+                  // Step 1: Prescription Validation
+                  prescription_validation: {
+                    type: "object",
+                    properties: {
+                      present: { type: "boolean", description: "Prescription document found" },
+                      doctor_name: { type: "string" },
+                      doctor_slmc_no: { type: "string" },
+                      diagnosis: { type: "string" },
+                      prescribed_medicines: { 
+                        type: "array", 
+                        items: { 
+                          type: "object",
+                          properties: {
+                            name: { type: "string" },
+                            generic_name: { type: "string" },
+                            dosage: { type: "string" },
+                            quantity: { type: "number" },
+                            frequency: { type: "string" }
+                          }
+                        }
+                      },
+                      date_of_prescription: { type: "string" },
+                      patient_name_matches: { type: "boolean" },
+                      score: { type: "number", minimum: 0, maximum: 1, description: "Prescription validation score" }
+                    }
+                  },
+                  // Step 2: Pharmacy Bill Validation
+                  pharmacy_bill_validation: {
+                    type: "object",
+                    properties: {
+                      present: { type: "boolean", description: "Pharmacy bill found" },
+                      pharmacy_name: { type: "string" },
+                      bill_date: { type: "string" },
+                      bill_number: { type: "string" },
+                      billed_medicines: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            name: { type: "string" },
+                            quantity: { type: "number" },
+                            unit_price: { type: "number" },
+                            total_price: { type: "number" },
+                            is_covered: { type: "boolean" }
+                          }
+                        }
+                      },
+                      medicine_charges_total: { type: "number" },
+                      score: { type: "number", minimum: 0, maximum: 1 }
+                    }
+                  },
+                  // Step 3: Doctor Charges Validation
+                  doctor_charges_validation: {
+                    type: "object",
+                    properties: {
+                      present: { type: "boolean", description: "Channelling/consultation bill found" },
+                      consultation_fee: { type: "number" },
+                      doctor_name_matches_prescription: { type: "boolean" },
+                      fee_within_standard_range: { type: "boolean" },
+                      channelling_bill_legitimate: { type: "boolean" },
+                      score: { type: "number", minimum: 0, maximum: 1 }
+                    }
+                  },
+                  // Step 4: Cross-Check Results
+                  prescription_bill_crosscheck: {
+                    type: "object",
+                    properties: {
+                      all_billed_medicines_prescribed: { type: "boolean" },
+                      quantities_match: { type: "boolean" },
+                      unmatched_medicines: { type: "array", items: { type: "string" }, description: "Medicines billed but not prescribed" },
+                      quantity_mismatches: { type: "array", items: { type: "string" } },
+                      generic_equivalents_used: { type: "array", items: { type: "string" }, description: "Brand names matched to generic" },
+                      crosscheck_score: { type: "number", minimum: 0, maximum: 1 }
+                    }
+                  },
+                  // Exclusions Found
+                  exclusions_analysis: {
+                    type: "object",
+                    properties: {
+                      vitamins_found: { type: "array", items: { type: "string" } },
+                      cosmetics_found: { type: "array", items: { type: "string" } },
+                      non_covered_medicines: { type: "array", items: { type: "string" } },
+                      excluded_amount: { type: "number", description: "Total amount of excluded items" }
+                    }
+                  },
+                  // Summary
                   mandatory_documents_status: {
                     type: "object",
                     properties: {
                       prescription: { type: "boolean" },
-                      medical_bill: { type: "boolean" },
-                      lab_report: { type: "boolean" },
-                      channelling_bill: { type: "boolean" }
+                      pharmacy_bill: { type: "boolean" },
+                      doctor_charges: { type: "boolean" }
                     }
                   },
                   missing_documents: { type: "array", items: { type: "string" } },
-                  coverage_details: {
-                    type: "object",
-                    properties: {
-                      opd_limit: { type: "number" },
-                      available_limit: { type: "number" },
-                      covered_items: { type: "array", items: { type: "string" } },
-                      excluded_items: { type: "array", items: { type: "string" } }
-                    }
-                  },
-                  exclusions_found: { type: "array", items: { type: "string" } },
-                  vitamins_found: { type: "array", items: { type: "string" } },
-                  cosmetics_found: { type: "array", items: { type: "string" } },
-                  non_covered_medicines: { type: "array", items: { type: "string" } },
-                  prescription_bill_match: {
-                    type: "object",
-                    properties: {
-                      medicines_match: { type: "boolean" },
-                      quantity_match: { type: "boolean" },
-                      mismatched_items: { type: "array", items: { type: "string" } }
-                    }
-                  },
                   previous_claims_total: { type: "number" },
                   remaining_coverage: { type: "number" },
+                  covered_amount: { type: "number", description: "Amount after removing exclusions" },
                   max_payable_amount: { type: "number" },
                   co_payment_amount: { type: "number" },
-                  prescription_diagnosis_score: { type: "number", minimum: 0, maximum: 1 },
-                  prescription_bill_score: { type: "number", minimum: 0, maximum: 1 },
-                  diagnosis_treatment_score: { type: "number", minimum: 0, maximum: 1 },
-                  billing_policy_score: { type: "number", minimum: 0, maximum: 1 },
+                  // Scoring
+                  prescription_validation_score: { type: "number", minimum: 0, maximum: 1 },
+                  prescription_bill_match_score: { type: "number", minimum: 0, maximum: 1 },
+                  doctor_charges_score: { type: "number", minimum: 0, maximum: 1 },
+                  policy_compliance_score: { type: "number", minimum: 0, maximum: 1 },
                   overall_validation_score: { type: "number", minimum: 0, maximum: 1 },
                   validation_issues: { type: "array", items: { type: "string" } },
-                  opd_validation_checklist: {
-                    type: "object",
-                    properties: {
-                      bill_date_visible: { type: "boolean" },
-                      warranty_period_ok: { type: "boolean" },
-                      submitted_clause_present: { type: "boolean" },
-                      name_matches: { type: "boolean" },
-                      amount_within_limit: { type: "boolean" },
-                      medicines_match: { type: "boolean" },
-                      quantities_match: { type: "boolean" },
-                      ailment_covered: { type: "boolean" },
-                      no_exclusions: { type: "boolean" },
-                      channelling_valid: { type: "boolean" },
-                      amount_normal: { type: "boolean" },
-                      reports_acceptable: { type: "boolean" },
-                      sinhala_bills_ok: { type: "boolean" },
-                      skin_treatment_ok: { type: "boolean" },
-                      dental_spectacles_ok: { type: "boolean" }
-                    }
-                  },
                   workflow_action: { type: "string", enum: ["auto_approve", "manual_review", "escalate", "reject"] }
                 },
                 required: ["policy_verified", "overall_validation_score", "workflow_action"]
