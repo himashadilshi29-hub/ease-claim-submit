@@ -135,7 +135,7 @@ const BranchPortal = () => {
           .eq("user_id", currentUser.id)
           .maybeSingle();
 
-        if (roleData?.role !== "branch" && roleData?.role !== "admin") {
+        if (roleData?.role !== "branch") {
           await supabase.auth.signOut();
           toast.error("Access denied. This portal is for branch staff only.");
           setLoginLoading(false);
