@@ -18,13 +18,7 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required").max(100),
 });
 
-// Demo credentials - only available in development mode
-const DEMO_CREDENTIALS: Record<string, { password: string; portal: PortalType; email: string }> = 
-  import.meta.env.DEV ? {
-    customer: { password: "customer123", portal: "customer", email: "customer@insurance.lk" },
-    staff: { password: "staff123", portal: "branch", email: "staff@insurance.lk" },
-    admin: { password: "admin123", portal: "admin", email: "admin@insurance.lk" },
-  } : {};
+// Demo credentials removed for security - use standard authentication
 
 const AuthPage = () => {
   const navigate = useNavigate();
@@ -71,29 +65,7 @@ const AuthPage = () => {
       }
     }
 
-    // Check if it's a demo credential - ONLY allowed in development mode
-    // Runtime check ensures this can never work in production even if credentials are exposed
-    if (import.meta.env.PROD && username.toLowerCase() in { customer: 1, staff: 1, admin: 1 }) {
-      toast.error("Demo accounts are not available in production");
-      return;
-    }
-
-    const demoUser = DEMO_CREDENTIALS[username.toLowerCase()];
-    if (demoUser && password === demoUser.password) {
-      setIsLoading(true);
-      const { error } = await signIn(demoUser.email, demoUser.password);
-      setIsLoading(false);
-
-      if (error) {
-        toast.error("Authentication failed. Please try again.");
-        return;
-      }
-
-      toast.success(t.authLoginSuccess || "Login successful!");
-      return;
-    }
-
-    // Regular email login
+    // Standard email login
     setIsLoading(true);
     const { error } = await signIn(username, password);
     setIsLoading(false);
@@ -117,8 +89,6 @@ const AuthPage = () => {
       </div>
     );
   }
-
-  const isDev = import.meta.env.DEV;
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -198,32 +168,6 @@ const AuthPage = () => {
               </Button>
             </form>
 
-            {/* Demo Credentials - Only show in development */}
-            {isDev && (
-              <div className="mt-8 p-4 bg-muted/50 rounded-xl text-left">
-                <p className="text-sm font-semibold text-foreground mb-3">Demo Credentials (Dev Only):</p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      <span className="font-mono">customer</span> / <span className="font-mono">customer123</span> → Digital Portal
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Building className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      <span className="font-mono">staff</span> / <span className="font-mono">staff123</span> → Branch Portal
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      <span className="font-mono">admin</span> / <span className="font-mono">admin123</span> → Admin Portal
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </motion.div>
       </main>
