@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   CheckCircle, Upload, X, Globe, Loader2, 
-  AlertCircle, FileText, Brain, Shield, Calculator 
+  AlertCircle, FileText, Brain, Shield, Calculator,
+  User, Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,13 +71,18 @@ interface UploadedDoc {
 const BranchPortal = () => {
   const navigate = useNavigate();
   const { t, setLanguage } = useLanguage();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signIn } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [members, setMembers] = useState<PolicyMember[]>([]);
   const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
   const [selectedMember, setSelectedMember] = useState<PolicyMember | null>(null);
+  
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
   
   const [formData, setFormData] = useState({
     nicOrPolicy: "",
@@ -102,6 +108,29 @@ const BranchPortal = () => {
   const [aiResults, setAiResults] = useState<any>(null);
 
   const STEPS = [t.stepLanguage, t.stepVerify, t.stepDetails, t.stepUpload, t.stepComplete];
+
+  // Handle branch login
+  const handleBranchLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) {
+      toast.error("Please enter email and password");
+      return;
+    }
+    
+    setLoginLoading(true);
+    try {
+      const { error } = await signIn(loginEmail, loginPassword);
+      if (error) {
+        toast.error(error.message || "Login failed");
+      } else {
+        toast.success("Login successful!");
+      }
+    } catch (err) {
+      toast.error("An error occurred during login");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
 
   // Verify policy when NIC/Policy number is entered
   const verifyPolicy = async () => {
@@ -381,42 +410,111 @@ const BranchPortal = () => {
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground">
-              {t.customerPortalBranch}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t.submitWithAI}
-            </p>
-          </div>
-
-          {/* Step Indicator */}
-          <div className="flex justify-center items-center gap-4 md:gap-8 mb-8">
-            {STEPS.map((step, i) => (
-              <div key={i} className="flex flex-col items-center">
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300",
-                    i < currentStep && "gradient-primary text-white shadow-md",
-                    i === currentStep && "gradient-primary text-white shadow-lg",
-                    i > currentStep && "bg-white border-2 border-border text-muted-foreground"
-                  )}
-                >
-                  {i < currentStep ? <CheckCircle className="w-5 h-5" /> : i + 1}
+          {/* Show Login Form if not authenticated */}
+          {authLoading ? (
+            <div className="flex justify-center items-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : !user ? (
+            <div className="max-w-md mx-auto">
+              <div className="glass-card p-8">
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Shield className="w-8 h-8 text-white" />
+                  </div>
+                  <h1 className="text-2xl font-bold text-foreground">Welcome Back</h1>
+                  <p className="text-muted-foreground mt-1">Sign in to access your portal</p>
                 </div>
-                <span className={cn(
-                  "text-xs mt-2 hidden md:block",
-                  i === currentStep ? "text-primary font-medium" : "text-muted-foreground"
-                )}>
-                  {step}
-                </span>
+                
+                <form onSubmit={handleBranchLogin} className="space-y-4">
+                  <div>
+                    <Label>Username</Label>
+                    <div className="relative mt-1">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        type="email"
+                        placeholder="Enter username"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label>Password</Label>
+                    <div className="relative mt-1">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        type="password"
+                        placeholder="Enter password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  
+                  <Button
+                    type="submit"
+                    variant="hero"
+                    className="w-full"
+                    disabled={loginLoading}
+                  >
+                    {loginLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Sign In
+                  </Button>
+                </form>
+                
+                <div className="mt-6 p-4 bg-muted rounded-lg">
+                  <p className="text-sm font-medium text-foreground mb-2">Demo Credentials (Dev Only):</p>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p className="flex items-center gap-2">
+                      <User className="w-3 h-3" />
+                      staff / staff123 → Branch Portal
+                    </p>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="text-center mb-8">
+                <h1 className="text-2xl md:text-3xl font-bold text-foreground">
+                  {t.customerPortalBranch}
+                </h1>
+                <p className="text-muted-foreground mt-1">
+                  {t.submitWithAI}
+                </p>
+              </div>
 
-          {/* Wizard Content */}
-          <div className="glass-card p-6 md:p-8">
+              {/* Step Indicator */}
+              <div className="flex justify-center items-center gap-4 md:gap-8 mb-8">
+                {STEPS.map((step, i) => (
+                  <div key={i} className="flex flex-col items-center">
+                    <div
+                      className={cn(
+                        "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300",
+                        i < currentStep && "gradient-primary text-white shadow-md",
+                        i === currentStep && "gradient-primary text-white shadow-lg",
+                        i > currentStep && "bg-white border-2 border-border text-muted-foreground"
+                      )}
+                    >
+                      {i < currentStep ? <CheckCircle className="w-5 h-5" /> : i + 1}
+                    </div>
+                    <span className={cn(
+                      "text-xs mt-2 hidden md:block",
+                      i === currentStep ? "text-primary font-medium" : "text-muted-foreground"
+                    )}>
+                      {step}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Wizard Content */}
+              <div className="glass-card p-6 md:p-8">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentStep}
@@ -803,7 +901,9 @@ const BranchPortal = () => {
                 )}
               </motion.div>
             </AnimatePresence>
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </main>
     </div>
