@@ -10,6 +10,7 @@ import Navbar from "@/components/shared/Navbar";
 import ClaimHistory from "@/components/portal/ClaimHistory";
 import NewClaimWizard from "@/components/portal/NewClaimWizard";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -57,9 +58,28 @@ const DigitalPortal = () => {
 
       if (error) {
         toast.error(error.message || "Login failed");
-      } else {
-        toast.success("Welcome back!");
+        setIsLoading(false);
+        return;
       }
+
+      // Check user role after successful login
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", currentUser.id)
+          .maybeSingle();
+
+        if (roleData?.role !== "customer") {
+          await signOut();
+          toast.error("Access denied. This portal is for customers only.");
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      toast.success("Welcome back!");
     } catch (err) {
       if (err instanceof z.ZodError) {
         toast.error(err.errors[0].message);
