@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, FileText, CheckCircle, Clock, Building, Calendar, CreditCard, Phone, XCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, User, FileText, CheckCircle, Clock, Calendar, CreditCard, Phone, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -230,13 +230,6 @@ const ClaimDetails = () => {
             <div className="glass-card p-6">
               <h2 className="text-lg font-semibold text-foreground mb-4">Treatment Details</h2>
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="flex items-start gap-3">
-                  <Building className="w-4 h-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Hospital</p>
-                    <p className="font-medium text-primary">{claim.hospital_name || "N/A"}</p>
-                  </div>
-                </div>
                 <div className="flex items-start gap-3">
                   <FileText className="w-4 h-4 text-muted-foreground mt-0.5" />
                   <div>

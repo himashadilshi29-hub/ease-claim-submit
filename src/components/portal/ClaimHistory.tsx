@@ -21,7 +21,6 @@ interface Claim {
   approved_amount: number | null;
   created_at: string;
   diagnosis: string | null;
-  hospital_name: string | null;
   risk_level: string | null;
   fraud_status: string | null;
   ai_summary: string | null;
@@ -230,7 +229,7 @@ const ClaimHistory = () => {
                     </p>
                     {claim.diagnosis && (
                       <p className="text-sm text-muted-foreground">
-                        {claim.hospital_name ? `${claim.hospital_name} • ` : ""}{claim.diagnosis}
+                        {claim.diagnosis}
                       </p>
                     )}
                     {claim.ai_summary && (
