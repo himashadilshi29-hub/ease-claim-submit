@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+
+// Input validation schema
+const requestSchema = z.object({
+  claimId: z.string().uuid("Invalid claim ID format"),
+  documentId: z.string().uuid("Invalid document ID format"),
+  fileUrl: z.string().max(2048, "File URL too long"),
+  claimType: z.enum(["opd", "dental", "spectacles", "hospitalization"]).optional(),
+});
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -163,7 +172,30 @@ serve(async (req) => {
       });
     }
 
-    const { claimId, documentId, fileUrl, claimType } = await req.json();
+    // Parse and validate request body
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const parseResult = requestSchema.safeParse(body);
+    if (!parseResult.success) {
+      console.log("Validation failed:", parseResult.error.errors);
+      return new Response(JSON.stringify({ 
+        error: "Invalid request format", 
+        details: parseResult.error.errors 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { claimId, documentId, fileUrl, claimType } = parseResult.data;
     console.log(`Processing OPD document for claim: ${claimId}, document: ${documentId}, user: ${auth.userId}`);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");

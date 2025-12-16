@@ -71,7 +71,13 @@ const AuthPage = () => {
       }
     }
 
-    // Check if it's a demo credential (only in dev mode)
+    // Check if it's a demo credential - ONLY allowed in development mode
+    // Runtime check ensures this can never work in production even if credentials are exposed
+    if (import.meta.env.PROD && username.toLowerCase() in { customer: 1, staff: 1, admin: 1 }) {
+      toast.error("Demo accounts are not available in production");
+      return;
+    }
+
     const demoUser = DEMO_CREDENTIALS[username.toLowerCase()];
     if (demoUser && password === demoUser.password) {
       setIsLoading(true);
