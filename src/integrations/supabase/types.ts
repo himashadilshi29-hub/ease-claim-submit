@@ -58,6 +58,33 @@ export type Database = {
           },
         ]
       }
+      claim_exclusion_keywords: {
+        Row: {
+          category: string
+          created_at: string | null
+          exception_condition: string | null
+          id: string
+          is_active: boolean | null
+          keyword: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          exception_condition?: string | null
+          id?: string
+          is_active?: boolean | null
+          keyword: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          exception_condition?: string | null
+          id?: string
+          is_active?: boolean | null
+          keyword?: string
+        }
+        Relationships: []
+      }
       claim_history: {
         Row: {
           action: string
@@ -400,6 +427,161 @@ export type Database = {
             columns: ["policy_id"]
             isOneToOne: false
             referencedRelation: "policies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      corporate_policies: {
+        Row: {
+          claim_submission_deadline_days: number | null
+          company_name: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          policy_end_date: string
+          policy_number: string
+          policy_start_date: string
+          spectacle_claim_interval_years: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          claim_submission_deadline_days?: number | null
+          company_name: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          policy_end_date: string
+          policy_number: string
+          policy_start_date: string
+          spectacle_claim_interval_years?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          claim_submission_deadline_days?: number | null
+          company_name?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          policy_end_date?: string
+          policy_number?: string
+          policy_start_date?: string
+          spectacle_claim_interval_years?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      corporate_policy_members: {
+        Row: {
+          corporate_policy_id: string
+          created_at: string | null
+          date_of_birth: string | null
+          dental_used: number | null
+          employee_id_number: string | null
+          employee_name: string
+          employee_nic: string | null
+          hospitalization_used: number | null
+          id: string
+          is_active: boolean | null
+          last_spectacle_claim_date: string | null
+          opd_used: number | null
+          relationship: string | null
+          scheme_id: string
+          spectacles_used: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          corporate_policy_id: string
+          created_at?: string | null
+          date_of_birth?: string | null
+          dental_used?: number | null
+          employee_id_number?: string | null
+          employee_name: string
+          employee_nic?: string | null
+          hospitalization_used?: number | null
+          id?: string
+          is_active?: boolean | null
+          last_spectacle_claim_date?: string | null
+          opd_used?: number | null
+          relationship?: string | null
+          scheme_id: string
+          spectacles_used?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          corporate_policy_id?: string
+          created_at?: string | null
+          date_of_birth?: string | null
+          dental_used?: number | null
+          employee_id_number?: string | null
+          employee_name?: string
+          employee_nic?: string | null
+          hospitalization_used?: number | null
+          id?: string
+          is_active?: boolean | null
+          last_spectacle_claim_date?: string | null
+          opd_used?: number | null
+          relationship?: string | null
+          scheme_id?: string
+          spectacles_used?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "corporate_policy_members_corporate_policy_id_fkey"
+            columns: ["corporate_policy_id"]
+            isOneToOne: false
+            referencedRelation: "corporate_policies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "corporate_policy_members_scheme_id_fkey"
+            columns: ["scheme_id"]
+            isOneToOne: false
+            referencedRelation: "corporate_policy_schemes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      corporate_policy_schemes: {
+        Row: {
+          annual_limit: number | null
+          corporate_policy_id: string
+          created_at: string | null
+          dental_limit: number | null
+          hospitalization_limit: number | null
+          id: string
+          opd_limit: number | null
+          scheme_name: string
+          spectacles_limit: number | null
+        }
+        Insert: {
+          annual_limit?: number | null
+          corporate_policy_id: string
+          created_at?: string | null
+          dental_limit?: number | null
+          hospitalization_limit?: number | null
+          id?: string
+          opd_limit?: number | null
+          scheme_name: string
+          spectacles_limit?: number | null
+        }
+        Update: {
+          annual_limit?: number | null
+          corporate_policy_id?: string
+          created_at?: string | null
+          dental_limit?: number | null
+          hospitalization_limit?: number | null
+          id?: string
+          opd_limit?: number | null
+          scheme_name?: string
+          spectacles_limit?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "corporate_policy_schemes_corporate_policy_id_fkey"
+            columns: ["corporate_policy_id"]
+            isOneToOne: false
+            referencedRelation: "corporate_policies"
             referencedColumns: ["id"]
           },
         ]

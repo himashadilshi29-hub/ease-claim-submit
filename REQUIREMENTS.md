@@ -150,3 +150,94 @@ npm run dev
 - **Backend**: Supabase (PostgreSQL database, Authentication, Storage, Edge Functions)
 - **State Management**: TanStack React Query
 - **Forms**: React Hook Form + Zod validation
+
+---
+
+## Corporate Claims Validation System
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `corporate_policies` | Company-level policy information (policy number, company name, deadlines) |
+| `corporate_policy_schemes` | Scheme-level limits (hospitalization, OPD, dental, spectacles) |
+| `corporate_policy_members` | Employee enrollment with balance tracking |
+| `claim_exclusion_keywords` | Blacklisted keywords for claim filtering |
+
+### Configured Corporate Policies
+
+| Company | Policy Number | Schemes |
+|---------|---------------|---------|
+| Noyon Lanka (Pvt) Ltd | JSV2023-2476 | Scheme 1-4 |
+| Avery Dennison Lanka (Pvt) Ltd | JSV2025-1176 | Scheme 01-06 |
+| East West Properties | JSV2025-1525 | Option 1 |
+| Lankem Ceylon PLC | JSV2025-1216 | Option 1-2 |
+
+### Edge Function: `validate-corporate-claim`
+
+**Endpoint**: `POST /functions/v1/validate-corporate-claim`
+
+**Input (OCR Data)**:
+```json
+{
+  "patient_name": "string",
+  "company_name": "string (optional)",
+  "policy_number": "string (optional)",
+  "employee_nic": "string (optional)",
+  "bill_date": "YYYY-MM-DD",
+  "total_amount": 1500.00,
+  "line_items": [
+    { "name": "Panadol", "amount": 500 },
+    { "name": "Vitamin C", "amount": 200 }
+  ],
+  "doctor_seal_detected": true,
+  "claim_type": "OPD | Hospitalization | Pharmacy | Dental | Spectacles | OPD Drugs"
+}
+```
+
+**Output**:
+```json
+{
+  "status": "APPROVED | REJECTED | PARTIAL_APPROVAL | FLAGGED_FOR_REVIEW",
+  "approved_amount": 1300.00,
+  "rejected_reason": null,
+  "flagged_items": [],
+  "deducted_items": [
+    { "item": "Vitamin C", "reason": "Excluded keyword: vitamin", "amount": 200 }
+  ],
+  "balance_info": {
+    "opd_remaining": 13500,
+    "hospitalization_remaining": 275000,
+    "dental_remaining": 0,
+    "spectacles_remaining": 30000
+  },
+  "validation_steps": [
+    { "step": "Member Identification", "passed": true, "message": "Found member..." },
+    { "step": "Submission Deadline", "passed": true, "message": "Within 90 days..." },
+    { "step": "Keyword Filtering", "passed": true, "message": "Deducted Rs. 200..." },
+    { "step": "Prescription Validation", "passed": true, "message": "Doctor seal detected" },
+    { "step": "Balance Check", "passed": true, "message": "Sufficient balance..." },
+    { "step": "Spectacle Rule", "passed": true, "message": "No spectacle items..." }
+  ]
+}
+```
+
+### Validation Algorithm
+
+1. **Step 1: Member Identification** - Find member by name/NIC in corporate_policy_members
+2. **Step 2: Submission Deadline** - Reject if bill_date > 90 days old
+3. **Step 3: Keyword Filtering** - Deduct excluded items (shampoo, soap, cosmetics, vitamins, etc.)
+4. **Step 4: Prescription Validation** - Flag if pharmacy claim without doctor seal
+5. **Step 5: Balance Check** - Partial approval if exceeds remaining balance
+6. **Step 6: Spectacle Rule** - Reject if claimed within 2 years
+
+### Exclusion Keywords
+
+| Category | Keywords |
+|----------|----------|
+| Cosmetic | shampoo, soap, cream*, face wash, beauty, lotion*, moisturizer, sunscreen |
+| Supplement | vitamin*, supplement, tonic, nutritional supplement |
+| Administrative | registration fee, service charge, surcharge, booking fee |
+| Treatment | weight loss, slimming, hair fall, alopecia, acne |
+
+*Exception conditions apply (e.g., antifungal cream, pregnancy vitamins)
