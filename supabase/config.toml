@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.process-claim-pipeline]
 verify_jwt = true
+
+[functions.validate-corporate-claim]
+verify_jwt = true
