@@ -695,12 +695,13 @@ const BranchPortal = () => {
                       </div>
                       
                       <div>
-                        <Label>{t.labelBankAccount}</Label>
+                        <Label>{t.labelBankAccount} *</Label>
                         <Input
                           placeholder={t.placeholderBankAccount}
                           value={formData.accountNumber}
                           onChange={(e) => updateFormData("accountNumber", e.target.value)}
                           className="mt-1"
+                          required
                         />
                       </div>
                     </div>
@@ -709,7 +710,7 @@ const BranchPortal = () => {
                       <Button
                         variant="hero"
                         onClick={nextStep}
-                        disabled={!formData.claimType || !formData.memberId || !formData.claimAmount}
+                        disabled={!formData.claimType || !formData.memberId || !formData.claimAmount || !formData.accountNumber.trim()}
                       >
                         {t.btnContinue}
                       </Button>
