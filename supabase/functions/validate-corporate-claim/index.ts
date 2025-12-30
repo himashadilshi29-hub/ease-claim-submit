@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifyAuth, forbiddenResponse, unauthorizedResponse } from "../_shared/auth.ts";
 
 // CORS with origin validation
 function getCorsHeaders(req: Request): Record<string, string> {
@@ -86,6 +87,21 @@ serve(async (req) => {
 
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[${requestId}] Starting corporate claim validation`);
+
+  // Verify authentication
+  const auth = await verifyAuth(req);
+  if (!auth.authenticated) {
+    console.log(`[${requestId}] Authentication failed: ${auth.error}`);
+    return unauthorizedResponse(auth.error || "Unauthorized", corsHeaders);
+  }
+
+  // Only admin and branch users can validate corporate claims
+  if (!auth.isAdmin && !auth.isBranch) {
+    console.log(`[${requestId}] Access denied for user ${auth.userId}`);
+    return forbiddenResponse("Access denied. Only admin or branch users can validate corporate claims.", corsHeaders);
+  }
+
+  console.log(`[${requestId}] Authenticated as ${auth.isAdmin ? 'admin' : 'branch'} user: ${auth.userId}`);
 
   try {
     // Initialize Supabase client with service role for database operations
