@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Upload, X, Globe } from "lucide-react";
+import { 
+  CheckCircle, Upload, X, Globe, Loader2, 
+  AlertCircle, FileText, Brain, Shield, Calculator,
+  User, Lock
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -16,21 +22,237 @@ import Logo from "@/components/shared/Logo";
 import LanguageSelector from "@/components/shared/LanguageSelector";
 import { cn } from "@/lib/utils";
 import { useLanguage, Language } from "@/lib/i18n";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { z } from "zod";
+import { useAuth } from "@/hooks/useAuth";
+
+// Input validation schemas - more flexible to match actual data
+const nicRegex = /^([0-9]{9}[vVxX]|[0-9]{10,12})$/;
+const policyRegex = /^POL-?[0-9\-]+$/i;
+
+const nicOrPolicySchema = z.string()
+  .min(1, "NIC or Policy number is required")
+  .max(50, "Input too long")
+  .refine(
+    (val) => nicRegex.test(val) || policyRegex.test(val) || val.length >= 9,
+    "Please enter a valid NIC or Policy number"
+  );
+
+const claimAmountSchema = z.string()
+  .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0, "Claim amount must be a positive number")
+  .refine((val) => parseFloat(val) <= 10000000, "Claim amount exceeds maximum limit");
+
+interface Policy {
+  id: string;
+  policy_number: string;
+  policy_type: string;
+  holder_name: string;
+  hospitalization_limit: number;
+  opd_limit: number;
+}
+
+interface PolicyMember {
+  id: string;
+  member_name: string;
+  relationship: string;
+  bank_name: string;
+  account_number: string;
+  mobile_number: string;
+}
+
+interface UploadedDoc {
+  file: File;
+  status: 'uploading' | 'processing' | 'accepted' | 'error';
+  ocrConfidence?: number;
+  documentType?: string;
+}
 
 const BranchPortal = () => {
   const navigate = useNavigate();
   const { t, setLanguage } = useLanguage();
+  const { user, loading: authLoading, signIn } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [members, setMembers] = useState<PolicyMember[]>([]);
+  const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
+  const [selectedMember, setSelectedMember] = useState<PolicyMember | null>(null);
+  
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  
   const [formData, setFormData] = useState({
-    policyNumber: "",
+    nicOrPolicy: "",
+    policyId: "",
     claimType: "",
-    relationship: "",
-    bankAccount: "",
+    hospitalizationType: "",
+    memberId: "",
+    mobileNumber: "",
+    bankName: "",
+    accountNumber: "",
+    doctorName: "",
+    diagnosis: "",
+    admissionDate: "",
+    dischargeDate: "",
+    dateOfTreatment: "",
+    claimAmount: "",
   });
-  const [documents, setDocuments] = useState<File[]>([]);
+  
+  const [documents, setDocuments] = useState<UploadedDoc[]>([]);
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [processingStatus, setProcessingStatus] = useState("");
+  const [aiResults, setAiResults] = useState<any>(null);
 
   const STEPS = [t.stepLanguage, t.stepVerify, t.stepDetails, t.stepUpload, t.stepComplete];
+
+  // Handle branch login
+  const handleBranchLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) {
+      toast.error("Please enter email and password");
+      return;
+    }
+    
+    setLoginLoading(true);
+    try {
+      const { error } = await signIn(loginEmail, loginPassword);
+      if (error) {
+        toast.error(error.message || "Login failed");
+        setLoginLoading(false);
+        return;
+      }
+
+      // Check user role after successful login
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", currentUser.id)
+          .maybeSingle();
+
+        if (roleData?.role !== "branch") {
+          await supabase.auth.signOut();
+          toast.error("Access denied. This portal is for branch staff only.");
+          setLoginLoading(false);
+          return;
+        }
+      }
+
+      toast.success("Login successful!");
+    } catch (err) {
+      toast.error("An error occurred during login");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // Verify policy when NIC/Policy number is entered
+  const verifyPolicy = async () => {
+    if (!formData.nicOrPolicy) return;
+
+    if (authLoading) return;
+    if (!user?.id) {
+      toast.error("Please sign in as branch staff to verify policies");
+      navigate("/auth");
+      return;
+    }
+
+    const { data: roleRow, error: roleError } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (roleError || !roleRow?.role || (roleRow.role !== "branch" && roleRow.role !== "admin")) {
+      toast.error("Access denied. Please sign in with a branch account");
+      navigate("/auth");
+      return;
+    }
+
+    // Validate input before querying
+    const validationResult = nicOrPolicySchema.safeParse(formData.nicOrPolicy);
+    if (!validationResult.success) {
+      toast.error(validationResult.error.errors[0].message);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const raw = formData.nicOrPolicy.trim();
+      const input = raw.replace(/\s+/g, "");
+      const policyInput = input.toUpperCase();
+
+      const { data: byPolicy, error: byPolicyError } = await supabase
+        .from("policies")
+        .select("*")
+        .eq("policy_number", policyInput)
+        .eq("is_active", true);
+
+      const { data: byNic, error: byNicError } = await supabase
+        .from("policies")
+        .select("*")
+        .eq("holder_nic", input)
+        .eq("is_active", true);
+
+      if (byPolicyError || byNicError) {
+        toast.error("Policy lookup failed. Please ensure you are signed in as branch staff");
+        return;
+      }
+
+      const combined = [...(byPolicy || []), ...(byNic || [])];
+      const unique = Array.from(new Map(combined.map((p: any) => [p.id, p])).values());
+
+      if (unique.length > 0) {
+        setPolicies(unique);
+        setSelectedPolicy(unique[0]);
+        setFormData((prev) => ({ ...prev, policyId: unique[0].id }));
+        toast.success("Policy verified successfully!");
+        nextStep();
+      } else {
+        toast.error("No active policy found with this NIC/Policy number");
+      }
+    } catch {
+      toast.error("Unable to verify policy. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch members when policy is selected
+  useEffect(() => {
+    const fetchMembers = async () => {
+      if (!formData.policyId) return;
+      
+      const { data } = await supabase
+        .from("policy_members")
+        .select("*")
+        .eq("policy_id", formData.policyId);
+      
+      if (data) setMembers(data);
+    };
+    fetchMembers();
+  }, [formData.policyId]);
+
+  // Auto-fill member details
+  useEffect(() => {
+    if (formData.memberId && members.length > 0) {
+      const member = members.find(m => m.id === formData.memberId);
+      if (member) {
+        setSelectedMember(member);
+        setFormData(prev => ({
+          ...prev,
+          mobileNumber: member.mobile_number || "",
+          bankName: member.bank_name || "",
+          accountNumber: member.account_number || "",
+        }));
+      }
+    }
+  }, [formData.memberId, members]);
 
   const updateFormData = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -38,7 +260,11 @@ const BranchPortal = () => {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setDocuments((prev) => [...prev, ...Array.from(e.target.files!)]);
+      const newFiles = Array.from(e.target.files).map(file => ({
+        file,
+        status: 'uploading' as const,
+      }));
+      setDocuments(prev => [...prev, ...newFiles]);
     }
   };
 
@@ -49,16 +275,141 @@ const BranchPortal = () => {
   const nextStep = () => setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
 
-  const handleSubmit = () => {
-    setReferenceNumber(`CR${Math.floor(Math.random() * 100000).toString().padStart(6, "0")}`);
-    nextStep();
+  const handleSubmit = async () => {
+    // Validate claim amount before submission
+    const amountValidation = claimAmountSchema.safeParse(formData.claimAmount);
+    if (!amountValidation.success) {
+      toast.error(amountValidation.error.errors[0].message);
+      return;
+    }
+
+    setIsLoading(true);
+    setCurrentStep(4);
+    setProcessingStatus("Creating claim...");
+    setProcessingProgress(10);
+
+    try {
+      // Check if user is authenticated
+      if (!user?.id) {
+        toast.error("Please sign in to submit claims");
+        navigate("/auth");
+        return;
+      }
+
+      // Create claim for branch submissions
+      const claimData: any = {
+        user_id: user.id,
+        policy_number: selectedPolicy?.policy_number || formData.nicOrPolicy,
+        claim_type: formData.claimType,
+        relationship: selectedMember?.relationship || "self",
+        claim_amount: parseFloat(formData.claimAmount),
+        diagnosis: formData.diagnosis?.substring(0, 500),
+        doctor_name: formData.doctorName?.substring(0, 255),
+        mobile_number: formData.mobileNumber?.substring(0, 20),
+        bank_name: formData.bankName?.substring(0, 100),
+        account_number: formData.accountNumber?.substring(0, 50),
+      };
+
+      if (formData.policyId) claimData.policy_id = formData.policyId;
+      if (formData.memberId) claimData.member_id = formData.memberId;
+      if (formData.hospitalizationType) claimData.hospitalization_type = formData.hospitalizationType;
+      if (formData.dateOfTreatment) claimData.date_of_treatment = formData.dateOfTreatment;
+      if (formData.admissionDate) claimData.admission_date = formData.admissionDate;
+      if (formData.dischargeDate) claimData.discharge_date = formData.dischargeDate;
+
+      const { data: claim, error: claimError } = await supabase
+        .from("claims")
+        .insert(claimData)
+        .select()
+        .single();
+
+      if (claimError) {
+        if (claimError.message.includes("user_id")) {
+          toast.error("Branch submissions require authentication. Please use the Digital Portal.");
+          setIsLoading(false);
+          return;
+        }
+        throw claimError;
+      }
+
+      setReferenceNumber(claim.reference_number);
+      setProcessingProgress(30);
+      setProcessingStatus("Uploading documents...");
+
+      // Upload documents
+      for (let i = 0; i < documents.length; i++) {
+        const doc = documents[i];
+        const fileName = `${claim.id}/${Date.now()}-${doc.file.name}`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("claim-documents")
+          .upload(fileName, doc.file);
+
+        if (!uploadError && uploadData) {
+          await supabase.from("claim_documents").insert({
+            claim_id: claim.id,
+            file_name: doc.file.name,
+            file_path: uploadData.path,
+            file_type: doc.file.type,
+            file_size: doc.file.size,
+          });
+
+          setDocuments(prev => prev.map((d, idx) => 
+            idx === i ? { ...d, status: 'processing' } : d
+          ));
+        }
+
+        setProcessingProgress(30 + ((i + 1) / documents.length) * 30);
+      }
+
+      setProcessingProgress(60);
+      setProcessingStatus("Running AI analysis...");
+
+      // Trigger AI pipeline
+      const { data: pipelineResult, error: pipelineError } = await supabase.functions
+        .invoke("process-claim-pipeline", {
+          body: { claimId: claim.id },
+        });
+
+      if (!pipelineError) {
+        setAiResults(pipelineResult);
+      }
+
+      setProcessingProgress(100);
+      setProcessingStatus("Complete!");
+      toast.success("Claim submitted successfully!");
+    } catch (error) {
+      toast.error("Failed to submit claim. Please try again.");
+    }
+    setIsLoading(false);
   };
 
   const handleReset = () => {
     setCurrentStep(0);
-    setFormData({ policyNumber: "", claimType: "", relationship: "", bankAccount: "" });
+    setFormData({
+      nicOrPolicy: "",
+      policyId: "",
+      claimType: "",
+      hospitalizationType: "",
+      memberId: "",
+      mobileNumber: "",
+      bankName: "",
+      accountNumber: "",
+      doctorName: "",
+      diagnosis: "",
+      admissionDate: "",
+      dischargeDate: "",
+      dateOfTreatment: "",
+      claimAmount: "",
+    });
     setDocuments([]);
     setReferenceNumber("");
+    setPolicies([]);
+    setMembers([]);
+    setSelectedPolicy(null);
+    setSelectedMember(null);
+    setAiResults(null);
+    setProcessingProgress(0);
   };
 
   const handleLanguageSelect = (langCode: Language) => {
@@ -78,46 +429,111 @@ const BranchPortal = () => {
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">
-          {/* Header - Centered */}
-          <div className="text-center mb-8">
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground">
-              {t.customerPortalBranch}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {t.submitWithAI}
-            </p>
-          </div>
-
-          {/* Step Indicator - Centered Circles */}
-          <div className="flex justify-center items-center gap-4 md:gap-8 mb-8">
-            {STEPS.map((step, i) => (
-              <div key={i} className="flex flex-col items-center">
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300",
-                    i < currentStep && "gradient-primary text-white shadow-md",
-                    i === currentStep && "gradient-primary text-white shadow-lg",
-                    i > currentStep && "bg-white border-2 border-border text-muted-foreground"
-                  )}
-                >
-                  {i < currentStep ? (
-                    <CheckCircle className="w-5 h-5" />
-                  ) : (
-                    i + 1
-                  )}
+          {/* Show Login Form if not authenticated */}
+          {authLoading ? (
+            <div className="flex justify-center items-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : !user ? (
+            <div className="max-w-md mx-auto">
+              <div className="glass-card p-8">
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Shield className="w-8 h-8 text-white" />
+                  </div>
+                  <h1 className="text-2xl font-bold text-foreground">Welcome Back</h1>
+                  <p className="text-muted-foreground mt-1">Sign in to access your portal</p>
                 </div>
-                <span className={cn(
-                  "text-xs mt-2 hidden md:block",
-                  i === currentStep ? "text-primary font-medium" : "text-muted-foreground"
-                )}>
-                  {step}
-                </span>
+                
+                <form onSubmit={handleBranchLogin} className="space-y-4">
+                  <div>
+                    <Label>Username</Label>
+                    <div className="relative mt-1">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        type="email"
+                        placeholder="Enter username"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label>Password</Label>
+                    <div className="relative mt-1">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        type="password"
+                        placeholder="Enter password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  
+                  <Button
+                    type="submit"
+                    variant="hero"
+                    className="w-full"
+                    disabled={loginLoading}
+                  >
+                    {loginLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Sign In
+                  </Button>
+                </form>
+                
+                <div className="mt-6 p-4 bg-muted rounded-lg">
+                  <p className="text-sm font-medium text-foreground mb-2">Demo Credentials (Dev Only):</p>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p className="flex items-center gap-2">
+                      <User className="w-3 h-3" />
+                      staff / staff123 → Branch Portal
+                    </p>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="text-center mb-8">
+                <h1 className="text-2xl md:text-3xl font-bold text-foreground">
+                  {t.customerPortalBranch}
+                </h1>
+                <p className="text-muted-foreground mt-1">
+                  {t.submitWithAI}
+                </p>
+              </div>
 
-          {/* Wizard Content */}
-          <div className="glass-card p-6 md:p-8">
+              {/* Step Indicator */}
+              <div className="flex justify-center items-center gap-4 md:gap-8 mb-8">
+                {STEPS.map((step, i) => (
+                  <div key={i} className="flex flex-col items-center">
+                    <div
+                      className={cn(
+                        "w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300",
+                        i < currentStep && "gradient-primary text-white shadow-md",
+                        i === currentStep && "gradient-primary text-white shadow-lg",
+                        i > currentStep && "bg-white border-2 border-border text-muted-foreground"
+                      )}
+                    >
+                      {i < currentStep ? <CheckCircle className="w-5 h-5" /> : i + 1}
+                    </div>
+                    <span className={cn(
+                      "text-xs mt-2 hidden md:block",
+                      i === currentStep ? "text-primary font-medium" : "text-muted-foreground"
+                    )}>
+                      {step}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Wizard Content */}
+              <div className="glass-card p-6 md:p-8">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentStep}
@@ -163,14 +579,36 @@ const BranchPortal = () => {
                       <Label>{t.labelNICPolicy}</Label>
                       <Input
                         placeholder={t.placeholderNICPolicy}
-                        value={formData.policyNumber}
-                        onChange={(e) => updateFormData("policyNumber", e.target.value)}
+                        value={formData.nicOrPolicy}
+                        onChange={(e) => updateFormData("nicOrPolicy", e.target.value)}
                         className="mt-1"
                       />
                     </div>
+                    
+                    {selectedPolicy && (
+                      <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CheckCircle className="w-5 h-5 text-green-600" />
+                          <span className="font-medium text-green-700">Policy Verified</span>
+                        </div>
+                        <div className="text-sm text-green-600 space-y-1">
+                          <p>Policy: {selectedPolicy.policy_number}</p>
+                          <p>Holder: {selectedPolicy.holder_name}</p>
+                          <p>Type: {selectedPolicy.policy_type}</p>
+                          <p>HOSP Limit: LKR {selectedPolicy.hospitalization_limit?.toLocaleString()}</p>
+                          <p>OPD Limit: LKR {selectedPolicy.opd_limit?.toLocaleString()}</p>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="flex gap-3">
                       <Button variant="outline" onClick={prevStep}>{t.btnBack}</Button>
-                      <Button variant="hero" onClick={nextStep} disabled={!formData.policyNumber}>
+                      <Button 
+                        variant="hero" 
+                        onClick={verifyPolicy} 
+                        disabled={!formData.nicOrPolicy || isLoading}
+                      >
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                         {t.btnContinue}
                       </Button>
                     </div>
@@ -193,32 +631,77 @@ const BranchPortal = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="opd">{t.claimTypeOPD}</SelectItem>
-                            <SelectItem value="spectacles">{t.claimTypeSpectacles}</SelectItem>
                             <SelectItem value="dental">{t.claimTypeDental}</SelectItem>
+                            <SelectItem value="spectacles">{t.claimTypeSpectacles}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+                      
+                      {/* OPD specific fields */}
+                      {formData.claimType && (
+                        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                          <p className="text-sm text-blue-700">
+                            <strong>OPD Claim Requirements:</strong> Prescription + Medical Bill are mandatory. 
+                            Lab reports and channelling bills are optional.
+                          </p>
+                        </div>
+                      )}
+                      
                       <div>
                         <Label>{t.labelRelationship} *</Label>
-                        <Select value={formData.relationship} onValueChange={(v) => updateFormData("relationship", v)}>
+                        <Select value={formData.memberId} onValueChange={(v) => updateFormData("memberId", v)}>
                           <SelectTrigger className="mt-1">
                             <SelectValue placeholder={t.placeholderRelationship} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="self">{t.relationSelf}</SelectItem>
-                            <SelectItem value="spouse">{t.relationSpouse}</SelectItem>
-                            <SelectItem value="child">{t.relationChild}</SelectItem>
-                            <SelectItem value="parent">{t.relationParent}</SelectItem>
+                            {members.map((member) => (
+                              <SelectItem key={member.id} value={member.id}>
+                                {member.member_name} ({member.relationship})
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
+                      
                       <div>
-                        <Label>{t.labelBankAccount}</Label>
+                        <Label>Doctor Name</Label>
+                        <Input
+                          placeholder="Dr. ..."
+                          value={formData.doctorName}
+                          onChange={(e) => updateFormData("doctorName", e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label>Diagnosis / Reason for Treatment</Label>
+                        <Input
+                          placeholder="Enter diagnosis or reason (optional)"
+                          value={formData.diagnosis}
+                          onChange={(e) => updateFormData("diagnosis", e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label>Claim Amount (LKR) *</Label>
+                        <Input
+                          type="number"
+                          placeholder="0.00"
+                          value={formData.claimAmount}
+                          onChange={(e) => updateFormData("claimAmount", e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label>{t.labelBankAccount} *</Label>
                         <Input
                           placeholder={t.placeholderBankAccount}
-                          value={formData.bankAccount}
-                          onChange={(e) => updateFormData("bankAccount", e.target.value)}
+                          value={formData.accountNumber}
+                          onChange={(e) => updateFormData("accountNumber", e.target.value)}
                           className="mt-1"
+                          required
                         />
                       </div>
                     </div>
@@ -227,7 +710,7 @@ const BranchPortal = () => {
                       <Button
                         variant="hero"
                         onClick={nextStep}
-                        disabled={!formData.claimType || !formData.relationship}
+                        disabled={!formData.claimType || !formData.memberId || !formData.claimAmount || !formData.accountNumber.trim()}
                       >
                         {t.btnContinue}
                       </Button>
@@ -242,6 +725,53 @@ const BranchPortal = () => {
                       <h2 className="text-xl font-bold text-foreground">{t.uploadDocuments}</h2>
                       <p className="text-sm text-muted-foreground mt-1">{t.uploadDocumentsDesc}</p>
                     </div>
+                    
+                    {/* Required Documents Info */}
+                    <div className="bg-muted rounded-lg p-4">
+                      <h4 className="font-medium text-foreground mb-2">Required Documents</h4>
+                      <div className="grid md:grid-cols-2 gap-2 text-sm">
+                        {formData.claimType === "hospitalization" ? (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Claim Form (with doctor signature)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Diagnosis Card</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Admission Card</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Medical Bill / Invoice</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Prescription</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Payment Receipt</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Prescription</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-primary" />
+                              <span>Medical Bill / Invoice</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    
                     <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary transition-colors">
                       <input
                         type="file"
@@ -260,9 +790,18 @@ const BranchPortal = () => {
 
                     {documents.length > 0 && (
                       <div className="space-y-2">
-                        {documents.map((file, i) => (
+                        {documents.map((doc, i) => (
                           <div key={i} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                            <span className="text-sm text-foreground">{file.name}</span>
+                            <div className="flex items-center gap-3">
+                              <FileText className="w-5 h-5 text-muted-foreground" />
+                              <span className="text-sm text-foreground">{doc.file.name}</span>
+                              {doc.status === 'processing' && (
+                                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                              )}
+                              {doc.status === 'accepted' && (
+                                <CheckCircle className="w-4 h-4 text-green-500" />
+                              )}
+                            </div>
                             <button onClick={() => removeFile(i)}>
                               <X className="w-4 h-4 text-muted-foreground hover:text-destructive" />
                             </button>
@@ -273,39 +812,118 @@ const BranchPortal = () => {
 
                     <div className="flex gap-3">
                       <Button variant="outline" onClick={prevStep}>{t.btnBack}</Button>
-                      <Button variant="hero" onClick={handleSubmit}>
+                      <Button 
+                        variant="hero" 
+                        onClick={handleSubmit}
+                        disabled={documents.length === 0 || isLoading}
+                      >
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                         {t.btnSubmitClaim2}
                       </Button>
                     </div>
                   </div>
                 )}
 
-                {/* Step 4: Success */}
+                {/* Step 4: Success / Processing */}
                 {currentStep === 4 && (
                   <div className="text-center py-8">
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="w-20 h-20 rounded-full bg-success flex items-center justify-center mx-auto mb-6"
-                    >
-                      <CheckCircle className="w-10 h-10 text-white" />
-                    </motion.div>
-                    <h2 className="text-2xl font-bold text-foreground mb-2">{t.claimSubmitted}</h2>
-                    <div className="bg-muted rounded-xl p-4 inline-block mb-4">
-                      <p className="text-sm text-muted-foreground">{t.claimReference}</p>
-                      <p className="text-xl font-bold text-primary">{referenceNumber}</p>
-                    </div>
-                    <p className="text-muted-foreground mb-6">
-                      {t.claimReviewMsg}
-                    </p>
-                    <Button variant="hero" onClick={handleReset} className="w-full max-w-xs">
-                      {t.btnSubmitAnother}
-                    </Button>
+                    {isLoading ? (
+                      <>
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                          className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center mx-auto mb-6"
+                        >
+                          <Brain className="w-10 h-10 text-white" />
+                        </motion.div>
+                        <h2 className="text-xl font-bold text-foreground mb-2">AI Processing Your Claim</h2>
+                        <p className="text-muted-foreground mb-4">{processingStatus}</p>
+                        <Progress value={processingProgress} className="max-w-md mx-auto" />
+                      </>
+                    ) : (
+                      <>
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className={cn(
+                            "w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6",
+                            aiResults?.pipeline_results?.decision === "auto_approve" ? "bg-green-500" :
+                            aiResults?.pipeline_results?.decision === "reject" ? "bg-red-500" : "bg-amber-500"
+                          )}
+                        >
+                          {aiResults?.pipeline_results?.decision === "auto_approve" ? (
+                            <CheckCircle className="w-10 h-10 text-white" />
+                          ) : aiResults?.pipeline_results?.decision === "reject" ? (
+                            <X className="w-10 h-10 text-white" />
+                          ) : (
+                            <AlertCircle className="w-10 h-10 text-white" />
+                          )}
+                        </motion.div>
+                        
+                        <h2 className="text-2xl font-bold text-foreground mb-2">{t.claimSubmitted}</h2>
+                        <div className="bg-muted rounded-xl p-4 inline-block mb-4">
+                          <p className="text-sm text-muted-foreground">{t.claimReference}</p>
+                          <p className="text-xl font-bold text-primary">{referenceNumber}</p>
+                        </div>
+
+                        {/* AI Results */}
+                        {aiResults?.pipeline_results && (
+                          <div className="max-w-md mx-auto space-y-4 mb-6 text-left">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="bg-muted rounded-lg p-4 text-center">
+                                <Brain className="w-5 h-5 text-primary mx-auto mb-2" />
+                                <p className="text-2xl font-bold">
+                                  {Math.round((aiResults.pipeline_results.validation_score || 0) * 100)}%
+                                </p>
+                                <p className="text-xs text-muted-foreground">Validation Score</p>
+                              </div>
+                              <div className={cn(
+                                "rounded-lg p-4 text-center",
+                                aiResults.pipeline_results.fraud_score >= 0.7 ? "bg-red-100" :
+                                aiResults.pipeline_results.fraud_score >= 0.4 ? "bg-amber-100" : "bg-green-100"
+                              )}>
+                                <Shield className="w-5 h-5 text-primary mx-auto mb-2" />
+                                <p className={cn(
+                                  "text-2xl font-bold",
+                                  aiResults.pipeline_results.fraud_score >= 0.7 ? "text-red-600" :
+                                  aiResults.pipeline_results.fraud_score >= 0.4 ? "text-amber-600" : "text-green-600"
+                                )}>
+                                  {aiResults.pipeline_results.fraud_score >= 0.7 ? "High" :
+                                   aiResults.pipeline_results.fraud_score >= 0.4 ? "Medium" : "Low"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">Fraud Risk</p>
+                              </div>
+                            </div>
+                            
+                            {aiResults.pipeline_results.decision === "auto_approve" && (
+                              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Calculator className="w-4 h-4 text-green-600" />
+                                  <span className="text-sm text-green-600">Approved Amount</span>
+                                </div>
+                                <p className="text-2xl font-bold text-green-600">
+                                  LKR {aiResults.pipeline_results.insurer_payment?.toLocaleString()}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <p className="text-muted-foreground mb-6">
+                          {t.claimReviewMsg}
+                        </p>
+                        <Button variant="hero" onClick={handleReset} className="w-full max-w-xs">
+                          {t.btnSubmitAnother}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 )}
               </motion.div>
             </AnimatePresence>
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </main>
     </div>
